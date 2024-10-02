@@ -3,14 +3,7 @@
 This is the source code for the paper ''Marginalization Consistent Mixture of Separable Flows''
 
 # Requirements
-python		3.8.11
-
-Pytorch		1.9.0
-
-sklearn		0.0
-
-numpy		1.19.3
-
+Use YAML file
 
 # Training and Evaluation
 
