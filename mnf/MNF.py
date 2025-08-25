@@ -105,7 +105,6 @@ class MarginalNormalizingFlows(nn.Module):
             else:
                 mw = None
 
-
                 z, ldj_splines = self.splines[i](z, x, inverse=True)
                 ldj_splines = ldj_splines * mq
                 ldj -= ldj_splines.sum(-1)
