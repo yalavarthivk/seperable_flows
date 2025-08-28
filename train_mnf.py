@@ -7,17 +7,17 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torchinfo
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-import torchinfo
 
-from core import load_data, utils
-from more.model import Moses
+from core.model import Moses
+from core.utils import data_loader, metrics
 
 
 def setup_logging() -> logging.Logger:
@@ -203,7 +203,7 @@ def load_dataset(args: argparse.Namespace):
 
 def create_dataloaders(task, args: argparse.Namespace):
     """Create train, validation, and test dataloaders."""
-    train_loader, val_loader, test_loader = load_data.data_loaders(task, args)
+    train_loader, val_loader, test_loader = data_loader.data_loaders(task, args)
     return train_loader, val_loader, test_loader
 
 
@@ -227,7 +227,7 @@ class Trainer:
         self.logger = logger
         self.best_val_loss = float("inf")
         self.early_stop_counter = 0
-        self.compute_loss = utils.compute_losses()
+        self.compute_loss = metrics.compute_losses()
 
     def train_epoch(self, train_loader) -> float:
         """Train for one epoch."""
@@ -435,4 +435,10 @@ def main():
 
 if __name__ == "__main__":
     print(" ".join(sys.argv))
+    main()
+    main()
+    main()
+    main()
+    main()
+    main()
     main()
