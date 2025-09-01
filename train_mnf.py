@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import pdb
 import random
 import sys
 import time
@@ -15,9 +16,12 @@ import torch.nn as nn
 import torchinfo
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from traitlets import default
 
 from core.model import Moses
 from core.utils import data_loader, metrics
+from core.utils.metrics import AdditionalLossesComputer, compute_likelihood_losses
+from mnf.utils import wasserstein_distance
 
 
 def setup_logging() -> logging.Logger:
@@ -83,21 +87,13 @@ def parse_arguments() -> argparse.Namespace:
         help="Number of Gaussian components",
     )
     model_group.add_argument(
-        "--use-cov",
+        "--n-heads", "-nh", type=int, default=4, help="Number of attention heads"
+    )
+    model_group.add_argument(
+        "--enc-layers",
         type=int,
         default=1,
-        choices=[0, 1],
-        help="Use covariance matrix for base Gaussian (1=True, 0=False)",
-    )
-    model_group.add_argument(
-        "--use-activation",
-        type=int,
-        default=0,
-        choices=[0, 1],
-        help="Use activation between splines (1=True, 0=False)",
-    )
-    model_group.add_argument(
-        "--n-heads", "-nh", type=int, default=4, help="Number of attention heads"
+        help="Number of encoder layers for self attention",
     )
     model_group.add_argument(
         "--n-hiddens", type=int, default=128, help="Number of hidden dimensions"
@@ -128,6 +124,15 @@ def parse_arguments() -> argparse.Namespace:
     )
     data_group.add_argument(
         "--fold", "-f", type=int, default=0, help="Current fold number"
+    )
+
+    # Spline parameters
+    spline_group = parser.add_argument_group("splines")
+    spline_group.add_argument(
+        "--bounds", type=int, default=20, help="bound for the spline"
+    )
+    spline_group.add_argument(
+        "--num-bins", type=int, default=16, help="number of bins in the spline"
     )
 
     # Additional parameters
@@ -215,7 +220,7 @@ class Trainer:
         model: nn.Module,
         args,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler._LRScheduler,
+        scheduler: Any,
         device: torch.device,
         logger: logging.Logger,
     ):
@@ -227,65 +232,141 @@ class Trainer:
         self.logger = logger
         self.best_val_loss = float("inf")
         self.early_stop_counter = 0
-        self.compute_loss = metrics.compute_losses()
 
-    def train_epoch(self, train_loader) -> float:
+    def train_epoch(self, train_loader) -> Tuple[float, float]:
         """Train for one epoch."""
         self.model.train()
-        total_loss = 0.0
-        total_samples = 0
-
+        total_njnll = 0.0
+        total_mnll = 0.0
+        total_instances = 0
+        total_queries = 0
         for batch in train_loader:
             # Move batch to device and unpack
-            obs, mobs, xq, mq, y = (tensor.to(self.device) for tensor in batch)
-
-            # Skip empty batches
-            if xq.shape[1] == 0:
-                continue
+            obs, mobs, qry, mq, y = (tensor.to(self.device) for tensor in batch)
+            tobs = obs[:, :, 0]
+            cobs = obs[:, :, 1]
+            xobs = obs[:, :, 2]
+            tq = qry[:, :, 0]
+            cq = qry[:, :, 1]
 
             # Forward pass
             self.optimizer.zero_grad()
-            z, ldj, mw = self.model(obs, mobs, xq, mq, y)
+            self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
 
             # Compute loss
-            n_samples = mq.sum(-1).bool().sum()
-            loss = self.compute_loss.nll(z, mq, ldj, mw)
+            n_instances = mq.shape[0]
+            n_queries = mq.sum().item()
+            njnll, mnll = compute_likelihood_losses(self.model, y, mq)
 
             # Backward pass
-            loss.backward()
+            njnll.backward()
             self.optimizer.step()
 
             # Accumulate statistics
-            total_loss += loss.item() * n_samples.item()
-            total_samples += n_samples.item()
+            total_njnll += njnll.item() * n_instances
+            total_mnll += mnll.item() * n_queries
+            total_instances += n_instances
+            total_queries += n_queries
 
-        return total_loss / total_samples if total_samples > 0 else 0.0
+        return total_njnll / total_instances, total_mnll / total_queries
 
-    def evaluate(self, data_loader) -> float:
+    def evaluate(self, eval_loader) -> Tuple[float, float]:
         """Evaluate model on given data loader."""
         self.model.eval()
-        total_loss = 0.0
-        total_samples = 0
+        total_mnll = 0.0
+        total_njnll = 0.0
+        total_instances = 0
+        total_queries = 0
 
         with torch.no_grad():
-            for batch in data_loader:
+            for batch in eval_loader:
                 # Move batch to device and unpack
-                obs, mobs, xq, mq, y = (tensor.to(self.device) for tensor in batch)
-
-                # Skip empty batches
-                if xq.shape[1] == 0:
-                    continue
+                obs, mobs, qry, mq, y = (tensor.to(self.device) for tensor in batch)
+                tobs = obs[:, :, 0]
+                cobs = obs[:, :, 1]
+                xobs = obs[:, :, 2]
+                tq = qry[:, :, 0]
+                cq = qry[:, :, 1]
 
                 # Forward pass
-                z, ldj, mw = self.model(obs, mobs, xq, mq, y)
-                n_samples = mq.sum(-1).bool().sum()
-                loss = self.compute_loss.nll(z, mq, ldj, mw)
+                self.optimizer.zero_grad()
+                self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
+
+                # Compute loss
+                n_instances = mq.shape[1]
+                n_queries = mq.sum().item()
+                njnll, mnll = compute_likelihood_losses(self.model, y, mq)
 
                 # Accumulate statistics
-                total_loss += loss.item() * n_samples.item()
-                total_samples += n_samples.item()
+                total_njnll += njnll.item() * n_instances
+                total_mnll += mnll.item() * n_queries
+                total_instances += n_instances
+                total_queries += n_queries
 
-        return total_loss / total_samples if total_samples > 0 else 0.0
+        return total_njnll / total_instances, total_mnll / total_queries
+
+    def evaluate_for_all_metrics(self, eval_loader) -> Tuple[Dict, Dict, Dict]:
+        """Evaluate model on given data loader."""
+        self.model.eval()
+        total_mnll = 0.0
+        total_njnll = 0.0
+        total_mse = 0.0
+        total_robust_mse = 0.0
+        total_crps = 0.0
+        total_energy_score = 0.0
+        total_instances = 0
+        total_queries = 0
+        compute_additional_metrics = (
+            AdditionalLossesComputer().compute_additional_metrics
+        )
+        with torch.no_grad():
+            for batch in eval_loader:
+                # Move batch to device and unpack
+                obs, mobs, qry, mq, y = (tensor.to(self.device) for tensor in batch)
+                tobs = obs[:, :, 0]
+                cobs = obs[:, :, 1]
+                xobs = obs[:, :, 2]
+                tq = qry[:, :, 0]
+                cq = qry[:, :, 1]
+
+                # Forward pass
+                self.optimizer.zero_grad()
+                self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
+
+                # Compute loss
+                n_instances = mq.shape[1]
+                n_queries = mq.sum().item()
+                njnll, mnll = compute_likelihood_losses(self.model, y, mq)
+                additional_metrics = compute_additional_metrics(
+                    model=self.model, y=y, mq=mq, n_samples=1000
+                )
+
+                # Accumulate statistics
+                total_njnll += njnll.item() * n_instances
+                total_mnll += mnll.item() * n_queries
+                total_mse += additional_metrics.mse.item() * n_queries
+                total_robust_mse += additional_metrics.robust_mse.item() * n_queries
+                total_crps += additional_metrics.crps.item() * n_queries
+                total_energy_score += (
+                    additional_metrics.energy_score.item() * n_instances
+                )
+                total_instances += n_instances
+                total_queries += n_queries
+
+            likelihood_metrics = {
+                "njnll": total_njnll / total_instances,
+                "mnll": total_mnll / total_queries,
+            }
+            energy_metrics = {
+                "energy_score": total_energy_score / total_instances,
+                "crps": total_crps / total_queries,
+            }
+            point_metrics = {
+                "mse": total_mse / total_queries,
+                "robust_mse": total_robust_mse / total_queries,
+            }
+
+        return likelihood_metrics, energy_metrics, point_metrics
 
     def save_checkpoint(self, filepath: str, epoch: int, args: argparse.Namespace):
         """Save model checkpoint."""
@@ -304,7 +385,6 @@ class Trainer:
         """Load model checkpoint."""
         checkpoint = torch.load(filepath, map_location=self.device)
         self.model.load_state_dict(checkpoint["state_dict"])
-        return checkpoint
 
 
 def main():
@@ -330,16 +410,17 @@ def main():
     # Initialize model
     model_config = {
         "n_inputs": task.dataset.shape[-1],
-        "n_gaussians": args.n_gaussians,
-        "use_cov": bool(args.use_cov),
-        "use_activation": bool(args.use_activation),
-        "n_hiddens": args.n_hiddens,
-        "n_flayers": args.flayers,
+        "num_components": args.n_gaussians,
+        "latent_dim": args.n_hiddens,
+        "num_flow_layers": args.flayers,
+        "num_encoder_layers": args.enc_layers,
         "n_heads": args.n_heads,
+        "bounds": args.bounds,
+        "num_bins": args.num_bins,
         "device": device,
     }
 
-    model = MarginalNormalizingFlows(**model_config).to(device)
+    model = Moses(**model_config).to(device)
     model.zero_grad(set_to_none=True)
 
     # Print model summary
@@ -347,6 +428,8 @@ def main():
         "Model initialized with %d parameters",
         sum(p.numel() for p in model.parameters()),
     )
+
+    logger.info("Model summary:\n%s", torchinfo.summary(model))
 
     # Initialize optimizer and scheduler
     optimizer = AdamW(
@@ -377,28 +460,30 @@ def main():
         start_time = time.time()
 
         # Train
-        train_loss = trainer.train_epoch(train_loader)
+        train_njnll, train_mnll = trainer.train_epoch(train_loader)
 
         # Validate
-        val_loss = trainer.evaluate(valid_loader)
+        val_njnll, val_mnll = trainer.evaluate(valid_loader)
 
         epoch_time = time.time() - start_time
 
         logger.info(
-            "Epoch %3d/%d | Train Loss: %.6f | Val Loss: %.6f | Time: %.2fs",
+            "Epoch %3d/%d | Train njNLL: %.6f | Train mNLL: %.6f| Val njNLL: %.6f | Val mNLL: %.6f| Time: %.2fs",
             epoch,
             args.epochs,
-            train_loss,
-            val_loss,
+            train_njnll,
+            train_mnll,
+            val_njnll,
+            val_mnll,
             epoch_time,
         )
 
         # Save best model and check early stopping
-        if val_loss < trainer.best_val_loss:
-            trainer.best_val_loss = val_loss
+        if val_njnll < trainer.best_val_loss:
+            trainer.best_val_loss = val_njnll
             trainer.save_checkpoint(str(model_path), epoch, args)
             trainer.early_stop_counter = 0
-            logger.info("New best model saved with val_loss: %.6f", val_loss)
+            logger.info("New best model saved with val_loss: %.6f", val_njnll)
         else:
             trainer.early_stop_counter += 1
 
@@ -411,34 +496,30 @@ def main():
             break
 
         # Update scheduler
-        scheduler.step(val_loss)
+        scheduler.step(val_njnll)
 
     # Final evaluation on test set
     logger.info("Loading best model for final evaluation...")
     trainer.load_checkpoint(str(model_path))
 
     start_time = time.time()
-    test_loss = trainer.evaluate(test_loader)
+    likelihood_metrics, energy_metrics, point_metrics = (
+        trainer.evaluate_for_all_metrics(test_loader)
+    )
+
     eval_time = time.time() - start_time
 
     logger.info("Final Results:")
-    logger.info("Best Val Loss: %.6f", trainer.best_val_loss)
-    logger.info("Test Loss: %.6f", test_loss)
+    logger.info("Best Val nJNLL: %.6f", trainer.best_val_loss)
+    logger.info("Test njNLL: %.6f", likelihood_metrics["njnll"])
+    logger.info("Test mNLL: %.6f", likelihood_metrics["mnll"])
+    logger.info("Test mse: %.6f", point_metrics["mse"])
+    logger.info("Test robust mse: %.6f", point_metrics["robust_mse"])
+    logger.info("Test crps: %.6f", energy_metrics["crps"])
+    logger.info("Test energy score: %.6f", energy_metrics["energy_score"])
     logger.info("Evaluation Time: %.2fs", eval_time)
-
-    return {
-        "best_val_loss": trainer.best_val_loss,
-        "test_loss": test_loss,
-        "experiment_id": experiment_id,
-    }
 
 
 if __name__ == "__main__":
     print(" ".join(sys.argv))
-    main()
-    main()
-    main()
-    main()
-    main()
-    main()
     main()

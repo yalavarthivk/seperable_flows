@@ -14,6 +14,7 @@ Key Features:
 """
 
 import math
+import pdb
 from typing import Optional, Tuple
 
 import torch
@@ -162,7 +163,12 @@ class TimeSeriesEncoder(nn.Module):
     """
 
     def __init__(
-        self, n_channels: int, d_model: int, n_gaussians: int, n_heads: int = 2
+        self,
+        n_channels: int,
+        d_model: int,
+        n_gaussians: int,
+        n_heads: int = 2,
+        num_layers: int = 1,
     ) -> None:
         super().__init__()
 
@@ -182,7 +188,9 @@ class TimeSeriesEncoder(nn.Module):
         self.key_projection = nn.Linear(2 * d_model + 1, d_model)
 
         # Multi-head attention layers
-        self.self_attention = MultiHeadAttention(d_model, n_heads)
+        self.self_attention = nn.ModuleList()
+        for _ in range(num_layers):
+            self.self_attention.append(MultiHeadAttention(d_model, n_heads))
         self.cross_attention = MultiHeadAttention(d_model, n_heads)
 
         # Output projection for Gaussian mixture
@@ -272,9 +280,12 @@ class TimeSeriesEncoder(nn.Module):
 
     def forward(
         self,
-        observations: Tensor,
+        obs_times: Tensor,
+        obs_channels: Tensor,
         obs_mask: Tensor,
-        queries: Tensor,
+        obs_values: Tensor,
+        query_times: Tensor,
+        query_channels: Tensor,
         query_mask: Tensor,
     ) -> Tuple[Tensor, Tensor]:
         """
@@ -293,24 +304,18 @@ class TimeSeriesEncoder(nn.Module):
                 - History encoding [batch_size, n_obs, d_model]
                 - Full encoding [batch_size, n_gaussians, n_obs, d_model]
         """
-        # Extract components from input tensors
-        obs_times = observations[:, :, 0:1]  # [B, N, 1]
-        obs_channels = observations[:, :, 1]  # [B, N]
-        obs_values = observations[:, :, 2:]  # [B, N, 1]
 
-        query_times = queries[:, :, 0:1]  # [B, K, 1]
-        query_channels = queries[:, :, 1]  # [B, K]
-
+        num_queries = query_times.shape[-1]
         # Encode time and channel information
-        obs_time_embed = self._encode_time(obs_times, is_query=False)
-        query_time_embed = self._encode_time(query_times, is_query=True)
+        obs_time_embed = self._encode_time(obs_times.unsqueeze(-1), is_query=False)
+        query_time_embed = self._encode_time(query_times.unsqueeze(-1), is_query=True)
 
         obs_channel_embed = self._encode_channels(obs_channels, is_query=False)
         query_channel_embed = self._encode_channels(query_channels, is_query=True)
 
         # Combine embeddings
         obs_combined = torch.cat(
-            [obs_time_embed, obs_channel_embed, obs_values], dim=-1
+            [obs_time_embed, obs_channel_embed, obs_values.unsqueeze(-1)], dim=-1
         )
         query_combined = torch.cat([query_time_embed, query_channel_embed], dim=-1)
 
@@ -326,24 +331,24 @@ class TimeSeriesEncoder(nn.Module):
         self_mask, cross_mask = self._create_attention_masks(obs_mask, query_mask)
 
         # Apply self-attention to observations
-        obs_attended = self.self_attention(
-            obs_projected, obs_projected, obs_projected, self_mask
-        )
-        history_encoding = self.activation(obs_attended)
+
+        for layer in self.self_attention:
+            obs_projected = layer(
+                obs_projected, obs_projected, obs_projected, self_mask
+            )
+        history_encoding = self.activation(obs_projected)
 
         # Apply cross-attention between queries and observations
         query_attended = self.cross_attention(
-            query_projected, obs_attended, obs_attended, cross_mask
+            query_projected, history_encoding, history_encoding, cross_mask
         )
         query_encoding = self.activation(query_attended)
-
         # Project for Gaussian mixture model
-        gaussian_features = self.gaussian_projection(query_encoding)
-        full_encoding = gaussian_features.view(
-            -1, obs_attended.size(1), self.n_gaussians, self.d_model
+        query_encoding_full = self.gaussian_projection(query_encoding)
+        query_encoding = query_encoding_full.reshape(
+            -1, num_queries, self.n_gaussians, self.d_model
         )
 
         # Transpose for output format [batch_size, n_gaussians, seq_len, d_model]
-        full_encoding = full_encoding.permute(0, 2, 1, 3)
-
-        return history_encoding, full_encoding
+        query_encoding = query_encoding.permute(0, 2, 1, 3)
+        return history_encoding, query_encoding

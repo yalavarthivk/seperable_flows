@@ -1,144 +1,400 @@
+"""MOSES: Mixture of Splines for Enhanced Sampling.
+
+This module implements MOSES, a probabilistic model that combines:
+- Transformer-based encoding for time series conditioning
+- Mixture of multivariate Gaussians as base distribution
+- Rational linear spline flows for flexible transformations
+- Mixture weighting for multi-component modeling
+
+Example:
+    >>> model = Moses(n_inputs=5, latent_dim=128, num_components=3)
+    >>> model.to('cuda')
+    >>> # Forward pass
+    >>> nll = model.compute_loss(tx, cx, mx, x, tq, cq, mq, y)
+    >>> # Sampling
+    >>> samples = model.sample(mq, num_samples=1000)
+"""
+
 __all__ = [
     "Moses",
 ]
 
-
-from typing import Final
+import pdb
+import warnings
+from typing import Final, Optional, Tuple, Union
 
 import torch
-from networkx import reverse
 from torch import Tensor, nn
+from torch.nn import ModuleList
 
 from .distributions.base_distribution import MultiGaussian
 from .distributions.transforms import RationalLinearSplineFlow
-from .encoders.transformer import TimeSeriesEncoder as Encoder
+from .encoders.spline_transformer import TimeSeriesEncoder as Encoder
 from .mixture_weights import MixtureWeights
-from .utils.metrics import compute_mnll, compute_njnll
+from .utils.metrics import compute_mnll_on_latent, compute_njnll_on_latent
 
 
-class Moses:
-    r"""Implements a MOSES"""
+class Moses(nn.Module):
+    """MOSES: Mixture of Splines for Enhanced Sampling.
+
+    A probabilistic model combining transformer encoding, mixture of Gaussians,
+    and normalizing flows for flexible density modeling and sampling.
+
+    Args:
+        n_inputs: Number of input features
+        n_heads: Number of attention heads
+        num_components: Number of mixture components
+        latent_dim: Dimensionality of latent space
+        num_flow_layers: Number of flow transformation layers
+        num_bins: Number of bins for spline flows
+        bounds: Bounds for spline transformations
+        device: Device for model parameters
+    """
 
     def __init__(
         self,
         n_inputs: int = 5,
         n_heads: int = 2,
-        num_components=2,
+        num_components: int = 2,
         latent_dim: int = 128,
         num_flow_layers: int = 3,
+        num_encoder_layers: int = 1,
         num_bins: int = 16,
         bounds: float = 20.0,
-        device: torch.device = torch.device("cuda"),
+        device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
-        # constants
-        self.n_inputs = n_inputs
-        self.n_heads = (
-            n_heads  # number of attn heads to compute encoder, cov and mix weights
+
+        # Store configuration
+        self.config = {
+            "n_inputs": n_inputs,
+            "n_heads": n_heads,
+            "num_components": num_components,
+            "latent_dim": latent_dim,
+            "num_flow_layers": num_flow_layers,
+            "num_encoder_layers": num_encoder_layers,
+            "num_bins": num_bins,
+            "bounds": bounds,
+        }
+
+        # Initialize components
+        self._build_model()
+
+        # State variables (computed during forward pass)
+        self._reset_state()
+
+        # Move to device if specified
+        if device is not None:
+            self.to(device)
+
+    def _build_model(self) -> None:
+        """Build all model components."""
+        cfg = self.config
+
+        # Normalizing flows
+        self.flows = ModuleList(
+            [
+                RationalLinearSplineFlow(
+                    d_model=cfg["latent_dim"],
+                    tail_bound=cfg["bounds"],
+                    num_bins=cfg["num_bins"],
+                )
+                for _ in range(cfg["num_flow_layers"])
+            ]
         )
-        self.num_flow_layers = num_flow_layers
-        self.num_components = num_components
-        self.num_bins = num_bins
-        self.bounds = bounds
-        self.latent_dim = latent_dim
-        self.conditioning = None
-        self.mixture_logits = None
-        self.full_cond = None
-        self.history_cond = None
-        self.log_mix_wts = None
-        # submodules
 
-        # spline functions
-        self.flow = nn.ModuleList()
-        for _ in range(self.num_flow_layers):
-            self.flow.append(RationalLinearSplineFlow(self.latent_dim))
+        # Base distribution
+        self.base_distribution = MultiGaussian(latent_dim=cfg["latent_dim"])
 
-        # base distribution Gaussian Process
-        self.base = MultiGaussian(latent_dim=latent_dim)
-
-        # Mixture components
+        # Mixture weights
         self.mixture_weights = MixtureWeights(
-            latent_dim=latent_dim, num_components=num_components
+            latent_dim=cfg["latent_dim"], num_components=cfg["num_components"]
         )
 
-        # encoding the conditioning
-        self.encoder = Encoder(n_inputs, latent_dim, num_components, n_heads)
+        # Encoder
+        self.encoder = Encoder(
+            n_channels=cfg["n_inputs"],
+            d_model=cfg["latent_dim"],
+            n_gaussians=cfg["num_components"],
+            n_heads=cfg["n_heads"],
+            num_layers=cfg["num_encoder_layers"],
+        )
 
-    def distribution(self, tx, cx, mx, x, tq, cq, mq):
-        r"""encode the conditioning input"""
-        self.full_cond, self.history_cond = self.encoder(tx, cx, mx, x, tq, cq, mq)  #
-        self.log_mix_wts = self.mixture_weights(self.history_cond, mx)
-        self.base(mq, self.full_cond)
-        for spline in self.flow:
-            spline.forward_(self.full_cond)
+    def _reset_state(self) -> None:
+        """Reset internal state variables."""
+        self.log_mixture_weights: Optional[Tensor] = None
 
-    def flow_forward(self, y):
-        r"""Compute the forward operation on flows"""
+    @property
+    def num_components(self) -> int:
+        """Number of mixture components."""
+        return self.config["num_components"]
+
+    @property
+    def latent_dim(self) -> int:
+        """Latent space dimensionality."""
+        return self.config["latent_dim"]
+
+    def forward(
+        self,
+        tx: Tensor,
+        cx: Tensor,
+        mx: Tensor,
+        x: Tensor,
+        tq: Tensor,
+        cq: Tensor,
+        mq: Tensor,
+    ):
+        """Encode conditioning information.
+
+        Args:
+            tx, cx, mx, x: Training/context inputs
+            tq, cq, mq: Query inputs
+
+        Returns:
+            Tuple of (full_conditioning, history_conditioning, log_mixture_weights)
+        """
+        # Encode inputs
+        history_encoding, query_encoding = self.encoder(tx, cx, mx, x, tq, cq, mq)
+
+        # Compute mixture weights
+        self.log_mixture_weights = self.mixture_weights(history_encoding, mx)
+
+        # Update base distribution
+        self.base_distribution(query_encoding, mq)
+
+        # Update flow conditioning
+        for flow in self.flows:
+            flow(query_encoding)
+
+    def _apply_flows_forward(self, y: Tensor) -> Tuple[Tensor, Tensor]:
+        """Apply normalizing flows in forward direction.
+
+        Args:
+            y: Input tensor
+
+        Returns:
+            Tuple of (transformed_y, log_det_jacobian)
+        """
         ldj = torch.zeros_like(y)
-        for spline in self.flow:
-            y, ldj_flow = spline.forward_(y)
-            ldj = ldj + ldj_flow
+
+        for flow in self.flows:
+            y, ldj_step = flow.forward_(y)
+            ldj = ldj + ldj_step
+
         return y, ldj
 
-    def flow_inverse(self, z):
-        """compute the inverse operation on flows"""
+    def _apply_flows_inverse(self, z: Tensor) -> Tuple[Tensor, Tensor]:
+        """Apply normalizing flows in inverse direction.
+
+        Args:
+            z: Latent tensor
+
+        Returns:
+            Tuple of (transformed_z, log_det_jacobian)
+        """
         ldj = torch.zeros_like(z)
-        for spline in reversed(self.flow):
-            z, ldj_flow = spline.inverse_(z)
-            ldj = ldj + ldj_flow
+
+        for flow in reversed(self.flows):
+            z, ldj_step = flow.inverse_(z)
+            ldj = ldj + ldj_step
+
         return z, ldj
 
-    def njnll(self, y: Tensor, mq) -> Tensor:
-        """Compute the normalized joint negative log likelihood of the input."""
-        y_ = y.unsqueeze(1).repeat(1, self.num_components, 1)
+    def _prepare_target_tensor(self, y: Tensor) -> Tensor:
+        """Prepare target tensor for mixture processing.
 
-        z, ldj = self.flow_forward(y_)  # z \in [B, K, D], ldj \in [B, D]
+        Args:
+            y: Target tensor of shape (batch_size, target_dim)
 
-        likelihood = compute_njnll(
-            z, ldj, self.base.mean, self.base.cov, self.log_mix_wts, mq
-        )  # B
+        Returns:
+            Expanded tensor of shape (batch_size, num_components, target_dim)
+        """
+        return y.unsqueeze(1).repeat(1, self.num_components, 1)
+
+    def compute_njnll(self, y: Tensor, mq: Tensor) -> Tensor:
+        """Compute normalized joint negative log-likelihood.
+
+        Args:
+            y: Target values
+            mq: Query mask
+
+        Returns:
+            Mean NJNLL across batch
+        """
+        if self.log_mixture_weights is None:
+            raise RuntimeError(
+                "Must call encode_conditioning() before computing likelihood"
+            )
+        mq_expanded = mq[:, None, :]
+        y_expanded = self._prepare_target_tensor(y)
+        z, ldj = self._apply_flows_forward(y_expanded)
+        z = z * mq_expanded
+        ldj = ldj * mq_expanded
+        likelihood = compute_njnll_on_latent(
+            z,
+            self.base_distribution,
+            ldj,
+            mq,
+            self.log_mixture_weights,
+        )
 
         return likelihood.mean()
 
-    def mnll(self, y: Tensor, mq) -> Tensor:
-        """Compute the marginal negative log likelihood of the input."""
-        # y \in [B, K]; mq \in [B, K]
-        y_ = y.unsqueeze(1).repeat(1, self.num_components, 1)  # y \in [B, D, K]
+    def compute_mnll(self, y: Tensor, mq: Tensor) -> Tensor:
+        """Compute marginal negative log-likelihood.
 
-        ldj = torch.zeros_like(y_)
+        Args:
+            y: Target values
+            mq: Query mask
 
-        z, ldj = self.flow_forward(y)  # z \in [B, D, K], ldj \in [B, D, K]
+        Returns:
+            Mean MNLL across batch
+        """
+        if self.log_mixture_weights is None:
+            raise RuntimeError(
+                "Must call encode_conditioning() before computing likelihood"
+            )
 
-        likelihood = compute_mnll(
-            z, self.base.mean, self.base.cov, ldj, mq, log_mix_wts
-        )  # B, K
+        y_expanded = self._prepare_target_tensor(y)
+        z, ldj = self._apply_flows_forward(y_expanded)
 
-        return likelihood.mean()  # average over all targets
+        likelihood = compute_mnll_on_latent(
+            z,
+            self.base_distribution,
+            ldj,
+            mq,
+            self.log_mixture_weights,
+        )
 
-    def joint_sample(self, mq: Tensor, nsamples: int = 1000) -> Tensor:
-        r"""Sample from the model."""
+        return likelihood.mean()
 
-        # sample from the base distribution
-        z = self.base.sample(mq, nsamples)
+    def _sample_mixture_indices(self, num_samples: Optional[int] = None) -> Tensor:
+        """Sample indices from mixture weights.
 
-        x = self.flow_inverse(z)
+        Args:
+            batch_size: Optional batch size override
 
-        indices = self.sample_indices()
+        Returns:
+            Sampled indices
+        """
+        if self.log_mixture_weights is None:
+            raise RuntimeError("Must call encode_conditioning() before sampling")
+        mixture_probs = torch.exp(self.log_mixture_weights)
 
-        x = x[:, :, indices, :]  # TODO need to do it in correct manner
-        return x
+        if num_samples is None:
+            num_samples = 1
 
-    def marginal_sample(self, mq: Tensor, nsamples: int = 1000) -> Tensor:
-        z = self.base.marginal_sample(mq, nsamples)
-        x = self.flow_inverse(z)
-        indices = self.sample_indices()
-        x = x[:, :, indices, :]
-        return x
+        return torch.multinomial(mixture_probs, num_samples, replacement=True)
 
-    def sample_indices(self) -> Tensor:  # shape: N
-        """Return indices of the mixture."""
+    def sample_joint(
+        self, mq: Tensor, num_samples: int = 1000, return_indices: bool = False
+    ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+        """Sample from joint distribution.
 
-        mix_weights = torch.exp(self.log_mix_wts)
+        Args:
+            mq: Query mask
+            num_samples: Number of samples to generate
+            return_indices: Whether to return mixture indices
 
-        indices = torch.multinomial(mix_weights, self.num_components, replacement=True)
-        return indices
+        Returns:
+            Samples tensor, optionally with mixture indices
+        """
+        if self.base_distribution.mean is None:
+            raise RuntimeError("Must call encode_conditioning() before sampling")
+            # Sample from base distribution
+        z = self.base_distribution.sample_joint(num_samples)
+        z *= mq[:, None, :, None]
+        # Transform through flows
+
+        x, _ = self._apply_flows_inverse(z)  # B, D, K, nsamples
+
+        # Sample mixture indices
+        indices = self._sample_mixture_indices(num_samples=num_samples)  # B, nsamples
+
+        # Select according to mixture indices
+
+        indices_exp = (
+            indices.unsqueeze(-1).expand(-1, -1, mq.shape[1]).permute(0, 2, 1)
+        )  # (B, K, nsamples)
+        # For gather, X must be permuted so that D is at the last dimension
+        x_perm = x.permute(0, 2, 3, 1)  # (B, K, nsamples, D)
+
+        # Gather along last dimension
+        x_selected = torch.gather(
+            x_perm, dim=-1, index=indices_exp.unsqueeze(-1)
+        ).squeeze(
+            -1
+        )  # (B, K, nsamples)
+
+        x_selected = x_selected * mq.unsqueeze(-1)
+        return (x_selected, indices) if return_indices else x_selected
+
+    def sample_marginal(
+        self, mq: Tensor, num_samples: int = 1000, return_indices: bool = False
+    ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+        """Sample from marginal distributions.
+
+        Args:
+            mq: Query mask
+            num_samples: Number of samples to generate
+            return_indices: Whether to return mixture indices
+
+        Returns:
+            Samples tensor, optionally with mixture indices
+        """
+        if self.base_distribution.mean is None:
+            raise RuntimeError("Must call encode_conditioning() before sampling")
+
+        # Sample from marginal base distribution
+        z = self.base_distribution.sample_marginal(num_samples)
+        z *= mq[:, None, :, None]
+        # Transform through flows
+        x, _ = self._apply_flows_inverse(z)
+        seq_len = mq.shape[-1]
+        # Sample mixture indices
+        indices = self._sample_mixture_indices(num_samples * seq_len)
+
+        # Select according to mixture indices
+        batch_indices = torch.arange(x.shape[0]).unsqueeze(1)
+        x_selected = x[batch_indices, indices]
+        x_selected = x_selected * mq.unsqueeze(-1)
+        return (x_selected, indices) if return_indices else x_selected
+
+    def sample(
+        self,
+        mq: Tensor,
+        num_samples: int = 1000,
+        mode: str = "joint",
+        return_indices: bool = False,
+    ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+        """Unified sampling interface.
+
+        Args:
+            mq: Query mask
+            num_samples: Number of samples to generate
+            mode: Sampling mode ('joint' or 'marginal')
+            return_indices: Whether to return mixture indices
+
+        Returns:
+            Samples tensor, optionally with mixture indices
+        """
+        if mode == "joint":
+            return self.sample_joint(mq, num_samples, return_indices)
+        elif mode == "marginal":
+            return self.sample_marginal(mq, num_samples, return_indices)
+        else:
+            raise ValueError(
+                f"Invalid sampling mode: {mode}. Use 'joint' or 'marginal'"
+            )
+
+    def get_config(self) -> dict:
+        """Get model configuration."""
+        return self.config.copy()
+
+    def extra_repr(self) -> str:
+        """String representation of model configuration."""
+        return (
+            f"latent_dim={self.config['latent_dim']}, "
+            f"num_components={self.config['num_components']}, "
+            f"num_flow_layers={self.config['num_flow_layers']}"
+        )

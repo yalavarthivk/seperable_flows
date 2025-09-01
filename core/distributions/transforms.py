@@ -1,3 +1,4 @@
+import pdb
 from typing import Tuple
 
 import numpy as np
@@ -217,7 +218,7 @@ class RationalLinearSplineFlow(nn.Module):
         self,
         d_model: int,
         num_bins: int = 16,
-        tail_bound: float = 10.0,
+        tail_bound: float = 20.0,
         min_bin_width: float = DEFAULT_MIN_BIN_WIDTH,
         min_bin_height: float = DEFAULT_MIN_BIN_HEIGHT,
         min_derivative: float = DEFAULT_MIN_DERIVATIVE,
@@ -304,15 +305,26 @@ class RationalLinearSplineFlow(nn.Module):
         Returns:
             Tuple of (inverse_transformed_values, log_abs_det_jacobian)
         """
+        if len(inputs.shape) > 3:  # this happens during sampling
+            nsamples = inputs.shape[-1]
+            widths = self.widths.unsqueeze(-2).repeat(1, 1, 1, nsamples, 1)
+            heights = self.heights.unsqueeze(-2).repeat(1, 1, 1, nsamples, 1)
+            derivatives = self.derivatives.unsqueeze(-2).repeat(1, 1, 1, nsamples, 1)
+            lambdas = self.lambdas.unsqueeze(-2).repeat(1, 1, 1, nsamples, 1)
+        else:
+            widths = self.widths
+            heights = self.heights
+            derivatives = self.derivatives
+            lambdas = self.lambdas
 
         # Apply inverse spline transformation
         outputs, log_abs_det = unconstrained_rational_linear_spline(
             inputs=inputs,
-            unnormalized_widths=self.widths,
-            unnormalized_heights=self.heights,
-            unnormalized_derivatives=self.derivatives,
-            unnormalized_lambdas=self.lambdas,
-            inverse=False,
+            unnormalized_widths=widths,
+            unnormalized_heights=heights,
+            unnormalized_derivatives=derivatives,
+            unnormalized_lambdas=lambdas,
+            inverse=True,
             tail_bound=self.tail_bound,
             min_bin_width=self.min_bin_width,
             min_bin_height=self.min_bin_height,

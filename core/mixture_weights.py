@@ -10,6 +10,7 @@ encoded history when computing mixture weights, making the model more flexible a
 """
 
 import math
+import pdb
 
 import torch
 import torch.nn.functional as F
@@ -177,4 +178,5 @@ class MixtureWeights(nn.Module):
         # Apply softmax to ensure weights sum to 1.0
         log_mixture_weights = F.log_softmax(raw_weights, dim=-1)
 
+        return log_mixture_weights
         return log_mixture_weights

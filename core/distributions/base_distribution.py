@@ -14,9 +14,11 @@ Example:
 """
 
 import math
+import pdb
 from typing import Optional, Tuple
 
 import torch
+from networkx import number_connected_components
 from torch import Tensor, nn
 from torch.distributions import MultivariateNormal
 
@@ -56,7 +58,10 @@ class MultiGaussian(nn.Module):
 
     def _create_masked_covariance(self, scores: Tensor, mask: Tensor) -> Tensor:
         """Create covariance matrix with masking and identity regularization."""
-        b, c, k = mask.shape
+        b, k = mask.shape
+
+        c = scores.shape[1]
+        mask = mask.unsqueeze(1).repeat(1, c, 1)
 
         # Create identity matrix
         identity = torch.eye(k, device=scores.device, dtype=scores.dtype)
@@ -69,7 +74,7 @@ class MultiGaussian(nn.Module):
         # otherwise use identity
         return torch.where(attn_mask, scores + identity, identity)
 
-    def compute_covariance(self, x: Tensor, mask: Tensor) -> Tensor:
+    def compute_covariance(self, h: Tensor, mask: Tensor) -> Tensor:
         """Compute covariance matrix using attention mechanism.
 
         Args:
@@ -79,11 +84,11 @@ class MultiGaussian(nn.Module):
         Returns:
             Covariance tensor (batch_size, num_components, num_queries, num_queries)
         """
-        queries = self.query_layer(x)
+        queries = self.query_layer(h)
         scores = self._compute_attention_scores(queries)
         return self._create_masked_covariance(scores, mask)
 
-    def forward(self, x: Tensor, mask: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, h: Tensor, mask: Tensor) -> Tuple[Tensor, Tensor]:
         """Compute and cache mean and covariance parameters.
 
         Args:
@@ -94,11 +99,10 @@ class MultiGaussian(nn.Module):
             Tuple of (mean, covariance) tensors
         """
         self.reset_cache()
-        self._mean = self.mean_layer(x).squeeze(-1)
-        self._cov = self.compute_covariance(x, mask)
+        self._mean = self.mean_layer(h).squeeze(-1) * mask[:, None, :]
+        self._cov = self.compute_covariance(h, mask.bool())
         if self._mean is None or self._cov is None:
             raise RuntimeError("Mean and covariance must not be None")
-        return self._mean, self._cov
 
     def sample_marginal(self, num_samples: int = 1000) -> Tensor:
         """Generate samples from marginal distributions (diagonal covariance only).
@@ -163,4 +167,5 @@ class MultiGaussian(nn.Module):
     def reset_cache(self) -> None:
         """Clear cached parameters."""
         self._mean = None
+        self._cov = None
         self._cov = None
