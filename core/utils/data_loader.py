@@ -1,3 +1,4 @@
+import os
 import pdb
 from typing import NamedTuple
 
@@ -60,6 +61,11 @@ def collate_fn(batch: list[Sample]) -> Batch:
         mask_x_bool = mask_x.bool()
         mask_y_bool = mask_y.bool()
 
+        if mask_y_bool.sum() == 0:
+            continue
+        if mask_x_bool.sum() == 0:
+            continue
+
         # nan to zeros
         xobs = torch.nan_to_num(x)
         xfut = torch.nan_to_num(y)
@@ -93,6 +99,16 @@ def collate_fn(batch: list[Sample]) -> Batch:
         batch_mq.append(mq)
         batch_y.append(y)
 
+    if len(batch_xobs) == 0:
+        # Return empty tensors with proper dimensions
+        return Batch(
+            xobs=torch.empty(0, 3),
+            mobs=torch.empty(0),
+            xq=torch.empty(0, 2),
+            mq=torch.empty(0),
+            y=torch.empty(0),
+        )
+
     return Batch(
         xobs=pad_sequence(batch_xobs, batch_first=True, padding_value=0),
         mobs=pad_sequence(batch_mobs, batch_first=True, padding_value=0),
@@ -110,7 +126,12 @@ def data_loaders(TASK, ARGS) -> tuple:
         "shuffle": True,
         "drop_last": True,
         "pin_memory": True,
-        "num_workers": 4,
+        "num_workers": min(8, os.cpu_count()),  # Increase workers
+        "persistent_workers": True,  # Reuse workers
+        "prefetch_factor": 3,  # Increase prefetch
+        "pin_memory_device": (
+            "cuda" if torch.cuda.is_available() else ""
+        ),  # Direct pin to GPU
         "collate_fn": collate_fn,
     }
 
@@ -119,12 +140,32 @@ def data_loaders(TASK, ARGS) -> tuple:
         "shuffle": False,
         "drop_last": False,
         "pin_memory": True,
-        "num_workers": 4,
+        "num_workers": min(8, os.cpu_count()),  # Increase workers
+        "persistent_workers": True,  # Reuse workers
+        "prefetch_factor": 3,  # Increase prefetch
+        "pin_memory_device": (
+            "cuda" if torch.cuda.is_available() else ""
+        ),  # Direct pin to GPU
+        "collate_fn": collate_fn,
+    }
+
+    dloader_config_eval = {
+        "batch_size": 1,
+        "shuffle": False,
+        "drop_last": False,
+        "pin_memory": True,
+        "num_workers": 1,  # Increase workers
+        "persistent_workers": True,  # Reuse workers
+        "prefetch_factor": 3,  # Increase prefetch
+        "pin_memory_device": (
+            "cuda" if torch.cuda.is_available() else ""
+        ),  # Direct pin to GPU
         "collate_fn": collate_fn,
     }
 
     train_loader = TASK.get_dataloader((ARGS.fold, "train"), **dloader_config_train)
     valid_loader = TASK.get_dataloader((ARGS.fold, "valid"), **dloader_config_infer)
     test_loader = TASK.get_dataloader((ARGS.fold, "test"), **dloader_config_infer)
+    eval_loader = TASK.get_dataloader((ARGS.fold, "test"), **dloader_config_eval)
 
-    return train_loader, valid_loader, test_loader
+    return train_loader, valid_loader, test_loader, eval_loader

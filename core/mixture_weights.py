@@ -52,9 +52,6 @@ class MixtureWeights(nn.Module):
         # Output projection to scalar weights
         self.output_projection = nn.Linear(latent_dim, 1)
 
-        # Dropout for regularization
-        self.dropout = nn.Dropout(dropout_rate)
-
         # Initialize parameters
 
     def _compute_attention_weights(
@@ -104,10 +101,6 @@ class MixtureWeights(nn.Module):
         """
         # Weighted aggregation: attention_weights @ values
         aggregated = torch.bmm(attention_weights, values)
-
-        # Apply ReLU activation and dropout
-        aggregated = F.relu(aggregated)
-        aggregated = self.dropout(aggregated)
 
         return aggregated
 
@@ -178,5 +171,4 @@ class MixtureWeights(nn.Module):
         # Apply softmax to ensure weights sum to 1.0
         log_mixture_weights = F.log_softmax(raw_weights, dim=-1)
 
-        return log_mixture_weights
         return log_mixture_weights

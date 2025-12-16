@@ -28,8 +28,9 @@ from torch import Tensor, nn
 from torch.nn import ModuleList
 
 from .distributions.base_distribution import MultiGaussian
-from .distributions.transforms import RationalLinearSplineFlow
-from .encoders.spline_transformer import TimeSeriesEncoder as Encoder
+from .distributions.spline_transforms import RationalLinearSplineFlow
+from .encoders.grafiti.grafiti import GraFITi
+from .encoders.transformer import TimeSeriesEncoder as transformer
 from .mixture_weights import MixtureWeights
 from .utils.metrics import compute_mnll_on_latent, compute_njnll_on_latent
 
@@ -61,6 +62,7 @@ class Moses(nn.Module):
         num_encoder_layers: int = 1,
         num_bins: int = 16,
         bounds: float = 20.0,
+        encoder_model: str = "transformer",
         device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
@@ -74,6 +76,7 @@ class Moses(nn.Module):
             "num_flow_layers": num_flow_layers,
             "num_encoder_layers": num_encoder_layers,
             "num_bins": num_bins,
+            "encoder_model": encoder_model,
             "bounds": bounds,
         }
 
@@ -110,15 +113,23 @@ class Moses(nn.Module):
         self.mixture_weights = MixtureWeights(
             latent_dim=cfg["latent_dim"], num_components=cfg["num_components"]
         )
-
+        if cfg["encoder_model"] == "grafiti":
+            self.encoder = GraFITi(
+                input_dim=cfg["n_inputs"],
+                latent_dim=cfg["latent_dim"],
+                n_gaussians=cfg["num_components"],
+                attn_head=cfg["n_heads"],
+                n_layers=cfg["num_encoder_layers"],
+            )
+        else:
+            self.encoder = transformer(
+                n_channels=cfg["n_inputs"],
+                d_model=cfg["latent_dim"],
+                n_gaussians=cfg["num_components"],
+                n_heads=cfg["n_heads"],
+                num_layers=cfg["num_encoder_layers"],
+            )
         # Encoder
-        self.encoder = Encoder(
-            n_channels=cfg["n_inputs"],
-            d_model=cfg["latent_dim"],
-            n_gaussians=cfg["num_components"],
-            n_heads=cfg["n_heads"],
-            num_layers=cfg["num_encoder_layers"],
-        )
 
     def _reset_state(self) -> None:
         """Reset internal state variables."""

@@ -1,0 +1,118 @@
+temp_ablation.py --batch-size 64 --epochs 1 -lr 0.001 --dataset ushcn --n-gaussians 1 --flayers 3 --n-heads 2 --n-hidden 128 -ct 12 -ft 36 --fold 0
+2025-11-20 17:33:23,165 - INFO - Arguments: Namespace(epochs=1, batch_size=64, val_batch_size=50, learn_rate=0.001, betas=[0.9, 0.999], weight_decay=0.001, seed=3043023719, flayers=3, n_gaussians=1, n_heads=2, encoder='transformer', enc_layers=1, n_hiddens=128, dataset='ushcn', forc_time=36, cond_time=12, nfolds=5, fold=0, bounds=20, num_bins=16, output_dir='saved_models', patience=30, scheduler_patience=10)
+2025-11-20 17:33:23,166 - INFO - Starting training with experiment ID: 6403166
+2025-11-20 17:33:23,166 - INFO - Using device: cuda
+2025-11-20 17:33:23,181 - INFO - Available Models: {'mTAN', 'N-BEATS', 'TPA', 'NODE', 'ODE-RNN', 'M-RNN', 'NCDE', 'SET-TS', 'GRU-ODE-Bayes', 'BRITS', 'Informer', 'TFT', 'Latent-ODE', 'IP-Net'}
+2025-11-20 17:33:23,181 - INFO - Available Datasets: {'Character Trajectories', 'M3', 'Air Quality', 'Human Activity', 'M4', 'Electricity', 'M5', 'Physionet 2012', 'Physionet 2019', 'Air Quality Multi-Site', 'Household Consumption', 'tourism2', 'tourism1', 'UWAVE', 'USHCN', 'Traffic', 'MuJoCo'}
+2025-11-20 17:33:23,235 - INFO - Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+2025-11-20 17:33:23,235 - INFO - NumExpr defaulting to 8 threads.
+2025-11-20 17:33:23,943 - WARNING - usetex mode requires TeX.
+2025-11-20 17:33:24,026 - INFO - File 'USHCN_DeBrouwer2019.parquet' validated successfully 'filehash='9d6011771a0001d53a8a083b5df7a005ff7808a2c2d1c6396c3fcbf43aa46994''.
+2025-11-20 17:33:24,113 - INFO - File 'USHCN_DeBrouwer2019.parquet' validated successfully 'filehash='9d6011771a0001d53a8a083b5df7a005ff7808a2c2d1c6396c3fcbf43aa46994''.
+2025-11-20 17:33:24,910 - INFO - Model initialized with 388159 parameters
+================================================================================
+Layer (type:depth-idx)                                  Param #
+================================================================================
+Moses                                                   --
+├─ModuleList: 1-1                                       --
+│    └─RationalLinearSplineFlow: 2-1                    --
+│    │    └─Linear: 3-1                                 2,064
+│    │    └─Linear: 3-2                                 2,064
+│    │    └─Linear: 3-3                                 1,935
+│    │    └─Linear: 3-4                                 2,064
+│    └─RationalLinearSplineFlow: 2-2                    --
+│    │    └─Linear: 3-5                                 2,064
+│    │    └─Linear: 3-6                                 2,064
+│    │    └─Linear: 3-7                                 1,935
+│    │    └─Linear: 3-8                                 2,064
+│    └─RationalLinearSplineFlow: 2-3                    --
+│    │    └─Linear: 3-9                                 2,064
+│    │    └─Linear: 3-10                                2,064
+│    │    └─Linear: 3-11                                1,935
+│    │    └─Linear: 3-12                                2,064
+├─MultiGaussian: 1-2                                    --
+│    └─Linear: 2-4                                      129
+│    └─Linear: 2-5                                      16,512
+├─MixtureWeights: 1-3                                   128
+│    └─Linear: 2-6                                      129
+├─TimeSeriesEncoder: 1-4                                --
+│    └─Linear: 2-7                                      2
+│    └─Linear: 2-8                                      254
+│    └─Linear: 2-9                                      2
+│    └─Linear: 2-10                                     254
+│    └─Linear: 2-11                                     768
+│    └─Linear: 2-12                                     768
+│    └─Linear: 2-13                                     32,896
+│    └─Linear: 2-14                                     33,024
+│    └─ModuleList: 2-15                                 --
+│    │    └─MultiHeadAttention: 3-13                    131,200
+│    └─MultiHeadAttention: 2-16                         --
+│    │    └─Linear: 3-14                                32,768
+│    │    └─Linear: 3-15                                32,768
+│    │    └─Linear: 3-16                                32,768
+│    │    └─Linear: 3-17                                32,896
+│    │    └─ScaledDotProductAttention: 3-18             --
+│    └─Linear: 2-17                                     16,512
+│    └─ReLU: 2-18                                       --
+================================================================================
+Total params: 388,159
+Trainable params: 388,159
+Non-trainable params: 0
+================================================================================
+2025-11-20 17:33:24,912 - INFO - Model summary:
+================================================================================
+Layer (type:depth-idx)                                  Param #
+================================================================================
+Moses                                                   --
+├─ModuleList: 1-1                                       --
+│    └─RationalLinearSplineFlow: 2-1                    --
+│    │    └─Linear: 3-1                                 2,064
+│    │    └─Linear: 3-2                                 2,064
+│    │    └─Linear: 3-3                                 1,935
+│    │    └─Linear: 3-4                                 2,064
+│    └─RationalLinearSplineFlow: 2-2                    --
+│    │    └─Linear: 3-5                                 2,064
+│    │    └─Linear: 3-6                                 2,064
+│    │    └─Linear: 3-7                                 1,935
+│    │    └─Linear: 3-8                                 2,064
+│    └─RationalLinearSplineFlow: 2-3                    --
+│    │    └─Linear: 3-9                                 2,064
+│    │    └─Linear: 3-10                                2,064
+│    │    └─Linear: 3-11                                1,935
+│    │    └─Linear: 3-12                                2,064
+├─MultiGaussian: 1-2                                    --
+│    └─Linear: 2-4                                      129
+│    └─Linear: 2-5                                      16,512
+├─MixtureWeights: 1-3                                   128
+│    └─Linear: 2-6                                      129
+├─TimeSeriesEncoder: 1-4                                --
+│    └─Linear: 2-7                                      2
+│    └─Linear: 2-8                                      254
+│    └─Linear: 2-9                                      2
+│    └─Linear: 2-10                                     254
+│    └─Linear: 2-11                                     768
+│    └─Linear: 2-12                                     768
+│    └─Linear: 2-13                                     32,896
+│    └─Linear: 2-14                                     33,024
+│    └─ModuleList: 2-15                                 --
+│    │    └─MultiHeadAttention: 3-13                    131,200
+│    └─MultiHeadAttention: 2-16                         --
+│    │    └─Linear: 3-14                                32,768
+│    │    └─Linear: 3-15                                32,768
+│    │    └─Linear: 3-16                                32,768
+│    │    └─Linear: 3-17                                32,896
+│    │    └─ScaledDotProductAttention: 3-18             --
+│    └─Linear: 2-17                                     16,512
+│    └─ReLU: 2-18                                       --
+================================================================================
+Total params: 388,159
+Trainable params: 388,159
+Non-trainable params: 0
+================================================================================
+2025-11-20 17:33:24,913 - INFO - Starting training loop...
+epoch_time: 1.219221830368042
+Initial memory: 1.49 MB
+Current memory: 6.35 MB
+Peak memory: 343.78 MB
+min queries: 3.0
+mx queries: 6.0

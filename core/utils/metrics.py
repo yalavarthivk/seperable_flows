@@ -69,7 +69,7 @@ def multivariate_normal(z, mu, sigma, mq):
     Formula:
         log p(x) = - (K / 2) * log(2π)
                 - 0.5 * || L^{-1} (x - μ) ||^2
-                - sum_i log L_ii
+                - sum_i log L_ii (sum of diag?)
 
     Where:
         - x : data vector
@@ -85,6 +85,39 @@ def multivariate_normal(z, mu, sigma, mq):
     ).squeeze(-1)
     quad = (solve_l_diff**2).sum(-1)
     ldj = torch.log(torch.diagonal(L, dim1=-2, dim2=-1)).sum(-1)
+    k = mq.sum(-1)
+    log_prob = -0.5 * (k[:, None] * math.log(2 * math.pi) + quad) - ldj
+    return -log_prob
+
+
+def multivariate_normal_woodbury(z, mu, U, mq):
+    r"""
+    Log-density of a multivariate Gaussian using Woodbury Identity.
+
+    Formula:
+        log p(x) = - (K / 2) * log(2π)
+                - 0.5 * || L^{-1} (x - μ) ||^2
+                - sum_i log L_ii (sum of diag?)
+
+    Where:
+        - x : data vector
+        - μ : mean vector
+        - U : Σ = I + U@U.T
+        - K : dimension of x (number of queries)
+
+    """
+    diff = z - mu
+    A = torch.eye(U.shape[-1], device=U.device).unsqueeze(0).unsqueeze(0) + (
+        U.transpose(-1, -2) @ U
+    )
+    L = torch.linalg.cholesky(A)
+    ldj = torch.log(torch.diagonal(L, dim1=-2, dim2=-1)).sum(-1)
+    A_inv = torch.cholesky_inverse(L)
+    Q = (U * diff.unsqueeze(-1)).sum(-2)
+    # Quadratic term: sum_i (||y_i||^2 - (U^T y_i)^T A^-1 (U^T y_i))
+    quad = torch.sum(diff**2, dim=-1) - (
+        torch.sum((Q.unsqueeze(-1) * A_inv), dim=-2) * Q
+    ).sum(dim=-1)
     k = mq.sum(-1)
     log_prob = -0.5 * (k[:, None] * math.log(2 * math.pi) + quad) - ldj
     return -log_prob
@@ -113,9 +146,15 @@ def compute_njnll_on_latent(
 ) -> Tensor:
     r"""Compute njNLL of given values"""
     # mu is zero where there is mask and sigma is 1 for the diagonal where there is mask
-    neg_log_prob = multivariate_normal(
-        z, base_distribution.mean, base_distribution.cov, mq
-    )
+    _, _, K, M = base_distribution.U.shape
+    if K <= M:
+        neg_log_prob = multivariate_normal(
+            z=z, mu=base_distribution.mean, sigma=base_distribution.cov, mq=mq
+        )
+    else:
+        neg_log_prob = multivariate_normal_woodbury(
+            z=z, mu=base_distribution.mean, U=base_distribution.U, mq=mq
+        )
     comp_ldj = (ldj * mq[:, None, :]).sum(-1)
     comp_nll = neg_log_prob - comp_ldj
     total_nll = -torch.logsumexp(log_mix_wts - comp_nll, -1)

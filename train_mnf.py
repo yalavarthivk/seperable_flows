@@ -25,11 +25,11 @@ from mnf.utils import wasserstein_distance
 
 
 def setup_logging() -> logging.Logger:
-    """Setup logging configuration."""
+    """Setup logging configuration - all info to stdout, errors to stderr."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler("mnf_training.log")],
+        handlers=[logging.StreamHandler(sys.stdout)],  # All logs to stdout
     )
     return logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def parse_arguments() -> argparse.Namespace:
         help="Weight decay for regularization",
     )
     training_group.add_argument(
-        "--seed", "-s", type=int, default=42, help="Random seed for reproducibility"
+        "--seed", "-s", type=int, default=None, help="Random seed for reproducibility"
     )
 
     # Model parameters
@@ -88,6 +88,13 @@ def parse_arguments() -> argparse.Namespace:
     )
     model_group.add_argument(
         "--n-heads", "-nh", type=int, default=4, help="Number of attention heads"
+    )
+    model_group.add_argument(
+        "--encoder",
+        type=str,
+        default="transformer",
+        choices=["transformer", "grafiti"],  # Added choices for validation
+        help="Which encoder to use: transformer or grafiti",
     )
     model_group.add_argument(
         "--enc-layers",
@@ -168,10 +175,10 @@ def setup_environment(seed: int) -> torch.device:
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = True
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+        # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
     # Enable anomaly detection for debugging
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return device
@@ -208,12 +215,12 @@ def load_dataset(args: argparse.Namespace):
 
 def create_dataloaders(task, args: argparse.Namespace):
     """Create train, validation, and test dataloaders."""
-    train_loader, val_loader, test_loader = data_loader.data_loaders(task, args)
+    train_loader, val_loader, test_loader, _ = data_loader.data_loaders(task, args)
     return train_loader, val_loader, test_loader
 
 
 class Trainer:
-    """Elegant trainer class for Marginal Normalizing Flows model."""
+    """Trainer class for Marginal Normalizing Flows model."""
 
     def __init__(
         self,
@@ -293,7 +300,7 @@ class Trainer:
                 self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
 
                 # Compute loss
-                n_instances = mq.shape[1]
+                n_instances = mq.shape[0]
                 n_queries = mq.sum().item()
                 njnll, mnll = compute_likelihood_losses(self.model, y, mq)
 
@@ -334,11 +341,11 @@ class Trainer:
                 self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
 
                 # Compute loss
-                n_instances = mq.shape[1]
+                n_instances = mq.shape[0]
                 n_queries = mq.sum().item()
                 njnll, mnll = compute_likelihood_losses(self.model, y, mq)
                 additional_metrics = compute_additional_metrics(
-                    model=self.model, y=y, mq=mq, n_samples=1000
+                    model=self.model, y=y, mq=mq, n_samples=100
                 )
 
                 # Accumulate statistics
@@ -383,7 +390,8 @@ class Trainer:
 
     def load_checkpoint(self, filepath: str):
         """Load model checkpoint."""
-        checkpoint = torch.load(filepath, map_location=self.device)
+        # checkpoint = torch.load(filepath, map_location=self.device)
+        checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["state_dict"])
 
 
@@ -391,6 +399,8 @@ def main():
     """Main training function."""
     # Setup
     args = parse_arguments()
+    if args.seed is None:
+        args.seed = random.randint(0, 2**32 - 1)
     logger = setup_logging()
     device = setup_environment(args.seed)
 
@@ -417,10 +427,13 @@ def main():
         "n_heads": args.n_heads,
         "bounds": args.bounds,
         "num_bins": args.num_bins,
+        "encoder_model": args.encoder,
         "device": device,
     }
 
     model = Moses(**model_config).to(device)
+    # model = torch.compile(model, backend="eager")      # Most compatible
+
     model.zero_grad(set_to_none=True)
 
     # Print model summary
@@ -445,7 +458,7 @@ def main():
         patience=args.scheduler_patience,
         factor=0.5,
         min_lr=1e-5,
-        verbose=True,
+        # verbose=True,
     )
 
     # Initialize trainer
@@ -523,3 +536,4 @@ def main():
 if __name__ == "__main__":
     print(" ".join(sys.argv))
     main()
+    exit()

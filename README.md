@@ -1,6 +1,5 @@
 # seperable_flows
 
-This is the source code for the paper ''Marginalization Consistent Mixture of Separable Flows''
 
 # Requirements
 Use YAML file

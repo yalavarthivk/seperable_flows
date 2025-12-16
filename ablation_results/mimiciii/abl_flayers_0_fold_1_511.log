@@ -1,0 +1,217 @@
+train_mnf.py --batch-size 64 --epochs 1000 -lr 0.001 --dataset mimiciii --n-gaussians 3 --encoder transformer --flayers 0 --n-heads 1 --n-hidden 64 --fold 1
+2025-11-16 01:45:51,944 - INFO - Arguments: Namespace(epochs=1000, batch_size=64, val_batch_size=50, learn_rate=0.001, betas=[0.9, 0.999], weight_decay=0.001, seed=42, flayers=0, n_gaussians=3, n_heads=1, encoder='transformer', enc_layers=1, n_hiddens=64, dataset='mimiciii', forc_time=0, cond_time=36, nfolds=5, fold=1, bounds=20, num_bins=16, output_dir='saved_models', patience=30, scheduler_patience=10)
+2025-11-16 01:45:51,945 - INFO - Starting training with experiment ID: 3951945
+2025-11-16 01:45:51,945 - INFO - Using device: cuda
+2025-11-16 01:45:51,978 - INFO - Available Models: {'SET-TS', 'IP-Net', 'mTAN', 'TPA', 'N-BEATS', 'Latent-ODE', 'NODE', 'ODE-RNN', 'M-RNN', 'NCDE', 'GRU-ODE-Bayes', 'TFT', 'Informer', 'BRITS'}
+2025-11-16 01:45:51,978 - INFO - Available Datasets: {'UWAVE', 'Air Quality', 'M4', 'MuJoCo', 'Electricity', 'tourism2', 'tourism1', 'M3', 'Physionet 2012', 'Traffic', 'Character Trajectories', 'Physionet 2019', 'Human Activity', 'Air Quality Multi-Site', 'Household Consumption', 'M5', 'USHCN'}
+2025-11-16 01:45:52,111 - INFO - Note: detected 80 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+2025-11-16 01:45:52,111 - INFO - Note: NumExpr detected 80 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+2025-11-16 01:45:52,111 - INFO - NumExpr defaulting to 8 threads.
+2025-11-16 01:45:53,653 - WARNING - usetex mode requires TeX.
+2025-11-16 01:45:53,712 - INFO - Adding keys as attributes.
+2025-11-16 01:46:00,089 - INFO - Model initialized with 79106 parameters
+================================================================================
+Layer (type:depth-idx)                                  Param #
+================================================================================
+Moses                                                   --
+├─ModuleList: 1-1                                       --
+├─MultiGaussian: 1-2                                    --
+│    └─Linear: 2-1                                      65
+│    └─Linear: 2-2                                      4,160
+├─MixtureWeights: 1-3                                   192
+│    └─Linear: 2-3                                      65
+│    └─Dropout: 2-4                                     --
+├─TimeSeriesEncoder: 1-4                                --
+│    └─Linear: 2-5                                      2
+│    └─Linear: 2-6                                      126
+│    └─Linear: 2-7                                      2
+│    └─Linear: 2-8                                      126
+│    └─Linear: 2-9                                      6,208
+│    └─Linear: 2-10                                     6,208
+│    └─Linear: 2-11                                     8,256
+│    └─Linear: 2-12                                     8,320
+│    └─ModuleList: 2-13                                 --
+│    │    └─MultiHeadAttention: 3-1                     16,448
+│    └─MultiHeadAttention: 2-14                         --
+│    │    └─Linear: 3-2                                 4,096
+│    │    └─Linear: 3-3                                 4,096
+│    │    └─Linear: 3-4                                 4,096
+│    │    └─Linear: 3-5                                 4,160
+│    │    └─ScaledDotProductAttention: 3-6              --
+│    └─Linear: 2-15                                     12,480
+│    └─ReLU: 2-16                                       --
+================================================================================
+Total params: 79,106
+Trainable params: 79,106
+Non-trainable params: 0
+================================================================================
+2025-11-16 01:46:00,093 - INFO - Model summary:
+================================================================================
+Layer (type:depth-idx)                                  Param #
+================================================================================
+Moses                                                   --
+├─ModuleList: 1-1                                       --
+├─MultiGaussian: 1-2                                    --
+│    └─Linear: 2-1                                      65
+│    └─Linear: 2-2                                      4,160
+├─MixtureWeights: 1-3                                   192
+│    └─Linear: 2-3                                      65
+│    └─Dropout: 2-4                                     --
+├─TimeSeriesEncoder: 1-4                                --
+│    └─Linear: 2-5                                      2
+│    └─Linear: 2-6                                      126
+│    └─Linear: 2-7                                      2
+│    └─Linear: 2-8                                      126
+│    └─Linear: 2-9                                      6,208
+│    └─Linear: 2-10                                     6,208
+│    └─Linear: 2-11                                     8,256
+│    └─Linear: 2-12                                     8,320
+│    └─ModuleList: 2-13                                 --
+│    │    └─MultiHeadAttention: 3-1                     16,448
+│    └─MultiHeadAttention: 2-14                         --
+│    │    └─Linear: 3-2                                 4,096
+│    │    └─Linear: 3-3                                 4,096
+│    │    └─Linear: 3-4                                 4,096
+│    │    └─Linear: 3-5                                 4,160
+│    │    └─ScaledDotProductAttention: 3-6              --
+│    └─Linear: 2-15                                     12,480
+│    └─ReLU: 2-16                                       --
+================================================================================
+Total params: 79,106
+Trainable params: 79,106
+Non-trainable params: 0
+================================================================================
+2025-11-16 01:46:01,639 - INFO - Starting training loop...
+2025-11-16 01:46:07,899 - INFO - Epoch   1/1000 | Train njNLL: 1.377213 | Train mNLL: 1.369719| Val njNLL: 1.383874 | Val mNLL: 1.367877| Time: 6.26s
+2025-11-16 01:46:07,930 - INFO - New best model saved with val_loss: 1.383874
+2025-11-16 01:46:15,182 - INFO - Epoch   2/1000 | Train njNLL: 1.334704 | Train mNLL: 1.347608| Val njNLL: 1.351445 | Val mNLL: 1.360877| Time: 7.25s
+2025-11-16 01:46:15,202 - INFO - New best model saved with val_loss: 1.351445
+2025-11-16 01:46:22,669 - INFO - Epoch   3/1000 | Train njNLL: 1.309997 | Train mNLL: 1.348526| Val njNLL: 1.348846 | Val mNLL: 1.370867| Time: 7.47s
+2025-11-16 01:46:22,788 - INFO - New best model saved with val_loss: 1.348846
+2025-11-16 01:46:30,041 - INFO - Epoch   4/1000 | Train njNLL: 1.292878 | Train mNLL: 1.343186| Val njNLL: 1.322707 | Val mNLL: 1.348067| Time: 7.25s
+2025-11-16 01:46:30,061 - INFO - New best model saved with val_loss: 1.322707
+2025-11-16 01:46:37,328 - INFO - Epoch   5/1000 | Train njNLL: 1.275590 | Train mNLL: 1.313144| Val njNLL: 1.301845 | Val mNLL: 1.308066| Time: 7.27s
+2025-11-16 01:46:37,349 - INFO - New best model saved with val_loss: 1.301845
+2025-11-16 01:46:44,723 - INFO - Epoch   6/1000 | Train njNLL: 1.257611 | Train mNLL: 1.264782| Val njNLL: 1.265663 | Val mNLL: 1.238029| Time: 7.37s
+2025-11-16 01:46:44,743 - INFO - New best model saved with val_loss: 1.265663
+2025-11-16 01:46:51,951 - INFO - Epoch   7/1000 | Train njNLL: 1.224149 | Train mNLL: 1.219678| Val njNLL: 1.253505 | Val mNLL: 1.224839| Time: 7.21s
+2025-11-16 01:46:51,971 - INFO - New best model saved with val_loss: 1.253505
+2025-11-16 01:46:59,309 - INFO - Epoch   8/1000 | Train njNLL: 1.207774 | Train mNLL: 1.203366| Val njNLL: 1.231885 | Val mNLL: 1.204612| Time: 7.34s
+2025-11-16 01:46:59,329 - INFO - New best model saved with val_loss: 1.231885
+2025-11-16 01:47:06,772 - INFO - Epoch   9/1000 | Train njNLL: 1.197302 | Train mNLL: 1.190075| Val njNLL: 1.225920 | Val mNLL: 1.202775| Time: 7.44s
+2025-11-16 01:47:06,792 - INFO - New best model saved with val_loss: 1.225920
+2025-11-16 01:47:14,131 - INFO - Epoch  10/1000 | Train njNLL: 1.188080 | Train mNLL: 1.177951| Val njNLL: 1.220851 | Val mNLL: 1.176054| Time: 7.34s
+2025-11-16 01:47:14,152 - INFO - New best model saved with val_loss: 1.220851
+2025-11-16 01:47:21,373 - INFO - Epoch  11/1000 | Train njNLL: 1.176217 | Train mNLL: 1.163474| Val njNLL: 1.199221 | Val mNLL: 1.159167| Time: 7.22s
+2025-11-16 01:47:21,399 - INFO - New best model saved with val_loss: 1.199221
+2025-11-16 01:47:28,503 - INFO - Epoch  12/1000 | Train njNLL: 1.169782 | Train mNLL: 1.157749| Val njNLL: 1.200348 | Val mNLL: 1.160893| Time: 7.10s
+2025-11-16 01:47:35,799 - INFO - Epoch  13/1000 | Train njNLL: 1.165495 | Train mNLL: 1.151818| Val njNLL: 1.197403 | Val mNLL: 1.155455| Time: 7.30s
+2025-11-16 01:47:35,820 - INFO - New best model saved with val_loss: 1.197403
+2025-11-16 01:47:43,213 - INFO - Epoch  14/1000 | Train njNLL: 1.161933 | Train mNLL: 1.148291| Val njNLL: 1.187739 | Val mNLL: 1.147195| Time: 7.39s
+2025-11-16 01:47:43,234 - INFO - New best model saved with val_loss: 1.187739
+2025-11-16 01:47:50,712 - INFO - Epoch  15/1000 | Train njNLL: 1.155151 | Train mNLL: 1.141320| Val njNLL: 1.184202 | Val mNLL: 1.144567| Time: 7.48s
+2025-11-16 01:47:50,737 - INFO - New best model saved with val_loss: 1.184202
+2025-11-16 01:47:58,166 - INFO - Epoch  16/1000 | Train njNLL: 1.152430 | Train mNLL: 1.140164| Val njNLL: 1.185700 | Val mNLL: 1.153109| Time: 7.43s
+2025-11-16 01:48:05,552 - INFO - Epoch  17/1000 | Train njNLL: 1.152328 | Train mNLL: 1.141078| Val njNLL: 1.189363 | Val mNLL: 1.149266| Time: 7.39s
+2025-11-16 01:48:12,997 - INFO - Epoch  18/1000 | Train njNLL: 1.151575 | Train mNLL: 1.139383| Val njNLL: 1.184427 | Val mNLL: 1.144725| Time: 7.44s
+2025-11-16 01:48:20,268 - INFO - Epoch  19/1000 | Train njNLL: 1.148663 | Train mNLL: 1.137262| Val njNLL: 1.186021 | Val mNLL: 1.144362| Time: 7.27s
+2025-11-16 01:48:27,633 - INFO - Epoch  20/1000 | Train njNLL: 1.148631 | Train mNLL: 1.137395| Val njNLL: 1.179601 | Val mNLL: 1.139046| Time: 7.36s
+2025-11-16 01:48:27,653 - INFO - New best model saved with val_loss: 1.179601
+2025-11-16 01:48:35,064 - INFO - Epoch  21/1000 | Train njNLL: 1.147234 | Train mNLL: 1.137534| Val njNLL: 1.185541 | Val mNLL: 1.144848| Time: 7.41s
+2025-11-16 01:48:42,423 - INFO - Epoch  22/1000 | Train njNLL: 1.148073 | Train mNLL: 1.140089| Val njNLL: 1.178537 | Val mNLL: 1.143158| Time: 7.36s
+2025-11-16 01:48:42,452 - INFO - New best model saved with val_loss: 1.178537
+2025-11-16 01:48:49,957 - INFO - Epoch  23/1000 | Train njNLL: 1.142905 | Train mNLL: 1.131320| Val njNLL: 1.173528 | Val mNLL: 1.135367| Time: 7.50s
+2025-11-16 01:48:49,982 - INFO - New best model saved with val_loss: 1.173528
+2025-11-16 01:48:57,408 - INFO - Epoch  24/1000 | Train njNLL: 1.138958 | Train mNLL: 1.129520| Val njNLL: 1.174218 | Val mNLL: 1.143988| Time: 7.43s
+2025-11-16 01:49:04,752 - INFO - Epoch  25/1000 | Train njNLL: 1.138664 | Train mNLL: 1.127178| Val njNLL: 1.171916 | Val mNLL: 1.139474| Time: 7.34s
+2025-11-16 01:49:04,773 - INFO - New best model saved with val_loss: 1.171916
+2025-11-16 01:49:12,177 - INFO - Epoch  26/1000 | Train njNLL: 1.139040 | Train mNLL: 1.127921| Val njNLL: 1.174002 | Val mNLL: 1.136224| Time: 7.40s
+2025-11-16 01:49:19,617 - INFO - Epoch  27/1000 | Train njNLL: 1.138433 | Train mNLL: 1.127910| Val njNLL: 1.172054 | Val mNLL: 1.133758| Time: 7.44s
+2025-11-16 01:49:27,040 - INFO - Epoch  28/1000 | Train njNLL: 1.138743 | Train mNLL: 1.127474| Val njNLL: 1.173533 | Val mNLL: 1.134512| Time: 7.42s
+2025-11-16 01:49:34,379 - INFO - Epoch  29/1000 | Train njNLL: 1.135891 | Train mNLL: 1.125467| Val njNLL: 1.178034 | Val mNLL: 1.135146| Time: 7.34s
+2025-11-16 01:49:41,647 - INFO - Epoch  30/1000 | Train njNLL: 1.135254 | Train mNLL: 1.124856| Val njNLL: 1.174638 | Val mNLL: 1.133009| Time: 7.27s
+2025-11-16 01:49:49,078 - INFO - Epoch  31/1000 | Train njNLL: 1.135860 | Train mNLL: 1.124545| Val njNLL: 1.170172 | Val mNLL: 1.132971| Time: 7.43s
+2025-11-16 01:49:49,098 - INFO - New best model saved with val_loss: 1.170172
+2025-11-16 01:49:56,562 - INFO - Epoch  32/1000 | Train njNLL: 1.133215 | Train mNLL: 1.122758| Val njNLL: 1.172361 | Val mNLL: 1.136870| Time: 7.46s
+2025-11-16 01:50:04,181 - INFO - Epoch  33/1000 | Train njNLL: 1.132183 | Train mNLL: 1.121622| Val njNLL: 1.169299 | Val mNLL: 1.134840| Time: 7.62s
+2025-11-16 01:50:04,201 - INFO - New best model saved with val_loss: 1.169299
+2025-11-16 01:50:11,788 - INFO - Epoch  34/1000 | Train njNLL: 1.130567 | Train mNLL: 1.120378| Val njNLL: 1.167378 | Val mNLL: 1.127084| Time: 7.59s
+2025-11-16 01:50:11,808 - INFO - New best model saved with val_loss: 1.167378
+2025-11-16 01:50:19,057 - INFO - Epoch  35/1000 | Train njNLL: 1.131040 | Train mNLL: 1.120433| Val njNLL: 1.166127 | Val mNLL: 1.128803| Time: 7.25s
+2025-11-16 01:50:19,077 - INFO - New best model saved with val_loss: 1.166127
+2025-11-16 01:50:26,210 - INFO - Epoch  36/1000 | Train njNLL: 1.130785 | Train mNLL: 1.121355| Val njNLL: 1.166958 | Val mNLL: 1.128316| Time: 7.13s
+2025-11-16 01:50:33,480 - INFO - Epoch  37/1000 | Train njNLL: 1.129399 | Train mNLL: 1.119962| Val njNLL: 1.170177 | Val mNLL: 1.129819| Time: 7.27s
+2025-11-16 01:50:40,806 - INFO - Epoch  38/1000 | Train njNLL: 1.129166 | Train mNLL: 1.119257| Val njNLL: 1.164908 | Val mNLL: 1.126477| Time: 7.33s
+2025-11-16 01:50:40,826 - INFO - New best model saved with val_loss: 1.164908
+2025-11-16 01:50:48,326 - INFO - Epoch  39/1000 | Train njNLL: 1.129054 | Train mNLL: 1.120854| Val njNLL: 1.173065 | Val mNLL: 1.140120| Time: 7.50s
+2025-11-16 01:50:55,966 - INFO - Epoch  40/1000 | Train njNLL: 1.129745 | Train mNLL: 1.120778| Val njNLL: 1.179800 | Val mNLL: 1.135264| Time: 7.64s
+2025-11-16 01:51:03,371 - INFO - Epoch  41/1000 | Train njNLL: 1.130015 | Train mNLL: 1.120169| Val njNLL: 1.167143 | Val mNLL: 1.128437| Time: 7.40s
+2025-11-16 01:51:10,894 - INFO - Epoch  42/1000 | Train njNLL: 1.128787 | Train mNLL: 1.119619| Val njNLL: 1.168057 | Val mNLL: 1.124400| Time: 7.52s
+2025-11-16 01:51:18,188 - INFO - Epoch  43/1000 | Train njNLL: 1.126123 | Train mNLL: 1.116951| Val njNLL: 1.158301 | Val mNLL: 1.126380| Time: 7.29s
+2025-11-16 01:51:18,208 - INFO - New best model saved with val_loss: 1.158301
+2025-11-16 01:51:25,792 - INFO - Epoch  44/1000 | Train njNLL: 1.125604 | Train mNLL: 1.116283| Val njNLL: 1.156533 | Val mNLL: 1.124765| Time: 7.58s
+2025-11-16 01:51:25,813 - INFO - New best model saved with val_loss: 1.156533
+2025-11-16 01:51:33,464 - INFO - Epoch  45/1000 | Train njNLL: 1.124282 | Train mNLL: 1.115967| Val njNLL: 1.162861 | Val mNLL: 1.125563| Time: 7.65s
+2025-11-16 01:51:40,872 - INFO - Epoch  46/1000 | Train njNLL: 1.122719 | Train mNLL: 1.115024| Val njNLL: 1.161670 | Val mNLL: 1.123811| Time: 7.41s
+2025-11-16 01:51:48,324 - INFO - Epoch  47/1000 | Train njNLL: 1.125835 | Train mNLL: 1.117097| Val njNLL: 1.164272 | Val mNLL: 1.125551| Time: 7.45s
+2025-11-16 01:51:55,741 - INFO - Epoch  48/1000 | Train njNLL: 1.123313 | Train mNLL: 1.115439| Val njNLL: 1.163866 | Val mNLL: 1.127893| Time: 7.42s
+2025-11-16 01:52:03,080 - INFO - Epoch  49/1000 | Train njNLL: 1.126322 | Train mNLL: 1.118312| Val njNLL: 1.166685 | Val mNLL: 1.124872| Time: 7.34s
+2025-11-16 01:52:10,503 - INFO - Epoch  50/1000 | Train njNLL: 1.121691 | Train mNLL: 1.113464| Val njNLL: 1.161859 | Val mNLL: 1.124200| Time: 7.42s
+2025-11-16 01:52:17,925 - INFO - Epoch  51/1000 | Train njNLL: 1.121233 | Train mNLL: 1.112685| Val njNLL: 1.154468 | Val mNLL: 1.124085| Time: 7.42s
+2025-11-16 01:52:17,955 - INFO - New best model saved with val_loss: 1.154468
+2025-11-16 01:52:25,206 - INFO - Epoch  52/1000 | Train njNLL: 1.132460 | Train mNLL: 1.120428| Val njNLL: 1.164889 | Val mNLL: 1.129725| Time: 7.25s
+2025-11-16 01:52:32,673 - INFO - Epoch  53/1000 | Train njNLL: 1.123459 | Train mNLL: 1.114153| Val njNLL: 1.166138 | Val mNLL: 1.128409| Time: 7.47s
+2025-11-16 01:52:40,198 - INFO - Epoch  54/1000 | Train njNLL: 1.120796 | Train mNLL: 1.113126| Val njNLL: 1.163201 | Val mNLL: 1.123297| Time: 7.52s
+2025-11-16 01:52:47,647 - INFO - Epoch  55/1000 | Train njNLL: 1.122013 | Train mNLL: 1.114220| Val njNLL: 1.177214 | Val mNLL: 1.149294| Time: 7.45s
+2025-11-16 01:52:55,132 - INFO - Epoch  56/1000 | Train njNLL: 1.125460 | Train mNLL: 1.118152| Val njNLL: 1.158556 | Val mNLL: 1.124761| Time: 7.48s
+2025-11-16 01:53:02,612 - INFO - Epoch  57/1000 | Train njNLL: 1.120277 | Train mNLL: 1.112422| Val njNLL: 1.158821 | Val mNLL: 1.121717| Time: 7.48s
+2025-11-16 01:53:10,077 - INFO - Epoch  58/1000 | Train njNLL: 1.119661 | Train mNLL: 1.111587| Val njNLL: 1.158936 | Val mNLL: 1.124229| Time: 7.46s
+2025-11-16 01:53:17,559 - INFO - Epoch  59/1000 | Train njNLL: 1.119856 | Train mNLL: 1.111746| Val njNLL: 1.156285 | Val mNLL: 1.123114| Time: 7.48s
+2025-11-16 01:53:24,799 - INFO - Epoch  60/1000 | Train njNLL: 1.117689 | Train mNLL: 1.110681| Val njNLL: 1.156815 | Val mNLL: 1.122444| Time: 7.24s
+2025-11-16 01:53:32,412 - INFO - Epoch  61/1000 | Train njNLL: 1.118227 | Train mNLL: 1.110497| Val njNLL: 1.158947 | Val mNLL: 1.123774| Time: 7.61s
+2025-11-16 01:53:39,898 - INFO - Epoch  62/1000 | Train njNLL: 1.116572 | Train mNLL: 1.109651| Val njNLL: 1.160528 | Val mNLL: 1.127608| Time: 7.49s
+2025-11-16 01:53:47,407 - INFO - Epoch  63/1000 | Train njNLL: 1.113857 | Train mNLL: 1.107729| Val njNLL: 1.153944 | Val mNLL: 1.122676| Time: 7.51s
+2025-11-16 01:53:47,432 - INFO - New best model saved with val_loss: 1.153944
+2025-11-16 01:53:54,968 - INFO - Epoch  64/1000 | Train njNLL: 1.110695 | Train mNLL: 1.104971| Val njNLL: 1.152774 | Val mNLL: 1.120850| Time: 7.54s
+2025-11-16 01:53:54,989 - INFO - New best model saved with val_loss: 1.152774
+2025-11-16 01:54:02,203 - INFO - Epoch  65/1000 | Train njNLL: 1.109654 | Train mNLL: 1.104083| Val njNLL: 1.158025 | Val mNLL: 1.121177| Time: 7.21s
+2025-11-16 01:54:09,438 - INFO - Epoch  66/1000 | Train njNLL: 1.108970 | Train mNLL: 1.103872| Val njNLL: 1.153383 | Val mNLL: 1.123509| Time: 7.23s
+2025-11-16 01:54:16,726 - INFO - Epoch  67/1000 | Train njNLL: 1.109917 | Train mNLL: 1.106209| Val njNLL: 1.155844 | Val mNLL: 1.121176| Time: 7.29s
+2025-11-16 01:54:24,319 - INFO - Epoch  68/1000 | Train njNLL: 1.107374 | Train mNLL: 1.102888| Val njNLL: 1.156284 | Val mNLL: 1.122764| Time: 7.59s
+2025-11-16 01:54:31,688 - INFO - Epoch  69/1000 | Train njNLL: 1.107569 | Train mNLL: 1.103275| Val njNLL: 1.154853 | Val mNLL: 1.120365| Time: 7.37s
+2025-11-16 01:54:39,326 - INFO - Epoch  70/1000 | Train njNLL: 1.107077 | Train mNLL: 1.102900| Val njNLL: 1.157403 | Val mNLL: 1.119722| Time: 7.64s
+2025-11-16 01:54:46,671 - INFO - Epoch  71/1000 | Train njNLL: 1.106777 | Train mNLL: 1.103573| Val njNLL: 1.153427 | Val mNLL: 1.120749| Time: 7.34s
+2025-11-16 01:54:53,775 - INFO - Epoch  72/1000 | Train njNLL: 1.106207 | Train mNLL: 1.102877| Val njNLL: 1.155865 | Val mNLL: 1.121887| Time: 7.10s
+2025-11-16 01:55:01,316 - INFO - Epoch  73/1000 | Train njNLL: 1.105417 | Train mNLL: 1.102721| Val njNLL: 1.157115 | Val mNLL: 1.122499| Time: 7.54s
+2025-11-16 01:55:08,945 - INFO - Epoch  74/1000 | Train njNLL: 1.106266 | Train mNLL: 1.102562| Val njNLL: 1.156135 | Val mNLL: 1.120556| Time: 7.63s
+2025-11-16 01:55:16,256 - INFO - Epoch  75/1000 | Train njNLL: 1.105827 | Train mNLL: 1.102947| Val njNLL: 1.155068 | Val mNLL: 1.119813| Time: 7.31s
+2025-11-16 01:55:23,559 - INFO - Epoch  76/1000 | Train njNLL: 1.102329 | Train mNLL: 1.100261| Val njNLL: 1.155848 | Val mNLL: 1.119927| Time: 7.30s
+2025-11-16 01:55:30,842 - INFO - Epoch  77/1000 | Train njNLL: 1.101229 | Train mNLL: 1.099437| Val njNLL: 1.155162 | Val mNLL: 1.120790| Time: 7.28s
+2025-11-16 01:55:38,481 - INFO - Epoch  78/1000 | Train njNLL: 1.100903 | Train mNLL: 1.100056| Val njNLL: 1.158147 | Val mNLL: 1.121086| Time: 7.64s
+2025-11-16 01:55:46,004 - INFO - Epoch  79/1000 | Train njNLL: 1.100544 | Train mNLL: 1.099759| Val njNLL: 1.158702 | Val mNLL: 1.121008| Time: 7.52s
+2025-11-16 01:55:53,576 - INFO - Epoch  80/1000 | Train njNLL: 1.100796 | Train mNLL: 1.099511| Val njNLL: 1.157079 | Val mNLL: 1.121394| Time: 7.57s
+2025-11-16 01:56:01,011 - INFO - Epoch  81/1000 | Train njNLL: 1.100034 | Train mNLL: 1.099658| Val njNLL: 1.157734 | Val mNLL: 1.120205| Time: 7.43s
+2025-11-16 01:56:08,368 - INFO - Epoch  82/1000 | Train njNLL: 1.099723 | Train mNLL: 1.099575| Val njNLL: 1.157087 | Val mNLL: 1.120880| Time: 7.36s
+2025-11-16 01:56:15,892 - INFO - Epoch  83/1000 | Train njNLL: 1.099328 | Train mNLL: 1.099278| Val njNLL: 1.160108 | Val mNLL: 1.120841| Time: 7.52s
+2025-11-16 01:56:23,250 - INFO - Epoch  84/1000 | Train njNLL: 1.099182 | Train mNLL: 1.098621| Val njNLL: 1.162016 | Val mNLL: 1.123590| Time: 7.36s
+2025-11-16 01:56:30,704 - INFO - Epoch  85/1000 | Train njNLL: 1.098557 | Train mNLL: 1.098576| Val njNLL: 1.163220 | Val mNLL: 1.121844| Time: 7.45s
+2025-11-16 01:56:38,108 - INFO - Epoch  86/1000 | Train njNLL: 1.098299 | Train mNLL: 1.098031| Val njNLL: 1.167874 | Val mNLL: 1.124017| Time: 7.40s
+2025-11-16 01:56:45,635 - INFO - Epoch  87/1000 | Train njNLL: 1.096443 | Train mNLL: 1.097406| Val njNLL: 1.166081 | Val mNLL: 1.124212| Time: 7.53s
+2025-11-16 01:56:52,895 - INFO - Epoch  88/1000 | Train njNLL: 1.096111 | Train mNLL: 1.097102| Val njNLL: 1.162418 | Val mNLL: 1.122735| Time: 7.26s
+2025-11-16 01:57:00,430 - INFO - Epoch  89/1000 | Train njNLL: 1.095854 | Train mNLL: 1.096851| Val njNLL: 1.164494 | Val mNLL: 1.123097| Time: 7.53s
+2025-11-16 01:57:07,695 - INFO - Epoch  90/1000 | Train njNLL: 1.095790 | Train mNLL: 1.096966| Val njNLL: 1.162841 | Val mNLL: 1.122492| Time: 7.26s
+2025-11-16 01:57:15,182 - INFO - Epoch  91/1000 | Train njNLL: 1.095547 | Train mNLL: 1.096583| Val njNLL: 1.164363 | Val mNLL: 1.123431| Time: 7.49s
+2025-11-16 01:57:22,587 - INFO - Epoch  92/1000 | Train njNLL: 1.095091 | Train mNLL: 1.096514| Val njNLL: 1.165218 | Val mNLL: 1.123871| Time: 7.40s
+2025-11-16 01:57:29,924 - INFO - Epoch  93/1000 | Train njNLL: 1.095088 | Train mNLL: 1.096366| Val njNLL: 1.166629 | Val mNLL: 1.123348| Time: 7.34s
+2025-11-16 01:57:37,395 - INFO - Epoch  94/1000 | Train njNLL: 1.094957 | Train mNLL: 1.096227| Val njNLL: 1.167054 | Val mNLL: 1.124204| Time: 7.47s
+2025-11-16 01:57:37,396 - INFO - Early stopping after 30 epochs without improvement
+2025-11-16 01:57:37,396 - INFO - Loading best model for final evaluation...
+2025-11-16 01:57:38,403 - INFO - Final Results:
+2025-11-16 01:57:38,403 - INFO - Best Val nJNLL: 1.152774
+2025-11-16 01:57:38,403 - INFO - Test njNLL: 1.142946
+2025-11-16 01:57:38,403 - INFO - Test mNLL: 1.114072
+2025-11-16 01:57:38,403 - INFO - Test mse: 0.541263
+2025-11-16 01:57:38,403 - INFO - Test robust mse: 0.538118
+2025-11-16 01:57:38,403 - INFO - Test crps: 0.371109
+2025-11-16 01:57:38,403 - INFO - Test energy score: 1.582238
+2025-11-16 01:57:38,403 - INFO - Evaluation Time: 0.99s

@@ -147,5 +147,5 @@ class MarginalNormalizingFlows(nn.Module):
             return z, ldj, mw
 
         else:
-            y, ldj, mw = self.nf(obs, mobs, xq, mq, z, inverse=True)
+            y, ldj, mw = self.nf(obs=obs, mobs=mobs, xq=xq, mq=mq, y=None, inverse=True)
             return y, ldj, mw

@@ -39,6 +39,9 @@ class MultiGaussian(nn.Module):
         # Cache for computed parameters
         self._mean: Optional[Tensor] = None
         self._cov: Optional[Tensor] = None
+        self._U: Optional[Tensor] = (
+            None  # cov = U@U^T, useful for Woodbury identiy if K>M
+        )
 
     @property
     def mean(self) -> Optional[Tensor]:
@@ -49,6 +52,11 @@ class MultiGaussian(nn.Module):
     def cov(self) -> Optional[Tensor]:
         """Cached covariance parameters."""
         return self._cov
+
+    @property
+    def U(self) -> Optional[Tensor]:
+        """Cached covariance parameters."""
+        return self._U
 
     def _compute_attention_scores(self, queries: Tensor) -> Tensor:
         """Compute scaled dot-product attention scores."""
@@ -78,13 +86,14 @@ class MultiGaussian(nn.Module):
         """Compute covariance matrix using attention mechanism.
 
         Args:
-            x: Input tensor (batch_size, num_components, num_queries, hidden_dim)
-            mask: Binary mask (batch_size, num_components, num_queries)
+            h: Input tensor (batch_size, num_components, num_queries, hidden_dim)
+            mask: Binary mask (batch_size, num_queries)
 
         Returns:
             Covariance tensor (batch_size, num_components, num_queries, num_queries)
         """
         queries = self.query_layer(h)
+        self._U = queries * mask.unsqueeze(1).unsqueeze(-1)
         scores = self._compute_attention_scores(queries)
         return self._create_masked_covariance(scores, mask)
 
@@ -101,6 +110,11 @@ class MultiGaussian(nn.Module):
         self.reset_cache()
         self._mean = self.mean_layer(h).squeeze(-1) * mask[:, None, :]
         self._cov = self.compute_covariance(h, mask.bool())
+        # Ensure diagonal elements are at least 1.0
+        # batch_size, num_components, num_queries, _ = self._cov.shape
+        # eye = torch.eye(num_queries, device=self._cov.device, dtype=self._cov.dtype)
+        # eye = eye.expand(batch_size, num_components, -1, -1)
+        # self._cov = self._cov + eye * (1.0 - torch.diagonal(self._cov, dim1=-2, dim2=-1).unsqueeze(-1))
         if self._mean is None or self._cov is None:
             raise RuntimeError("Mean and covariance must not be None")
 
