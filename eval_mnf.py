@@ -266,8 +266,6 @@ class Trainer:
             njnll, mnll = compute_likelihood_losses(self.model, y, mq)
 
             # Backward pass
-            njnll.backward()
-            self.optimizer.step()
 
             # Accumulate statistics
             total_njnll += njnll.item() * n_instances
@@ -416,7 +414,7 @@ def main():
 
     # Load dataset and create dataloaders
     task = load_dataset(args)
-    train_loader, valid_loader, test_loader = create_dataloaders(task, args)
+    _, _, test_loader = create_dataloaders(task, args)
 
     # Initialize model
     model_config = {
@@ -466,51 +464,7 @@ def main():
     trainer = Trainer(model, args, optimizer, scheduler, device, logger)
 
     # Generate model path
-    model_path = output_dir / f"mnf_{args.dataset}_fold{args.fold}_{experiment_id}.pt"
-
-    # Training loop
-    logger.info("Starting training loop...")
-    for epoch in range(1, args.epochs + 1):
-        start_time = time.time()
-
-        # Train
-        train_njnll, train_mnll = trainer.train_epoch(train_loader)
-
-        # Validate
-        val_njnll, val_mnll = trainer.evaluate(valid_loader)
-
-        epoch_time = time.time() - start_time
-
-        logger.info(
-            "Epoch %3d/%d | Train njNLL: %.6f | Train mNLL: %.6f| Val njNLL: %.6f | Val mNLL: %.6f| Time: %.2fs",
-            epoch,
-            args.epochs,
-            train_njnll,
-            train_mnll,
-            val_njnll,
-            val_mnll,
-            epoch_time,
-        )
-
-        # Save best model and check early stopping
-        if val_njnll < trainer.best_val_loss:
-            trainer.best_val_loss = val_njnll
-            trainer.save_checkpoint(str(model_path), epoch, args)
-            trainer.early_stop_counter = 0
-            logger.info("New best model saved with val_loss: %.6f", val_njnll)
-        else:
-            trainer.early_stop_counter += 1
-
-        # Early stopping
-        if trainer.early_stop_counter >= args.patience:
-            logger.info(
-                "Early stopping after %d epochs without improvement",
-                args.patience,
-            )
-            break
-
-        # Update scheduler
-        scheduler.step(val_njnll)
+    model_path = output_dir / f"mnf_{args.dataset}_fold{args.fold}_{args.seed}.pt"
 
     # Final evaluation on test set
     logger.info("Loading best model for final evaluation...")

@@ -169,7 +169,6 @@ class Moses(nn.Module):
 
         # Compute mixture weights
         self.log_mixture_weights = self.mixture_weights(history_encoding, mx)
-
         # Update base distribution
         self.base_distribution(query_encoding, mq)
 

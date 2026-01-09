@@ -107,8 +107,8 @@ class MultiHeadAttention(nn.Module):
 
         # Apply linear transformations and split into heads
         Q = self._split_heads(self.w_query(query), batch_size)
-        K = self._split_heads(self.w_key(key), batch_size)
-        V = self._split_heads(self.w_value(value), batch_size)
+        K = self._split_heads(self.w_query(key), batch_size)
+        V = self._split_heads(self.w_query(value), batch_size)
 
         # Expand mask for multiple heads if provided
         if mask is not None:

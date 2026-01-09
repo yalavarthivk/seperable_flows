@@ -17,6 +17,69 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 
+class ScaledDotProductAttention(nn.Module):
+
+    def forward(self, query, key, value, mask=None):
+        dk = query.size()[-1]
+        scores = query.matmul(key.transpose(-2, -1)) / math.sqrt(dk)
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e6)
+        attention = F.softmax(scores, dim=-1)
+        return attention.matmul(value)
+
+
+class multiheadattention(nn.Module):
+    def __init__(self, n_hiddens: int, n_heads: int):
+        super(multiheadattention, self).__init__()
+        self.proj_param = nn.Linear(n_hiddens, n_hiddens * n_heads)
+        self.linear_o = nn.Linear(n_heads * n_hiddens, n_hiddens)
+        self.n_hiddens = n_hiddens
+        self.n_heads = n_heads
+
+    def forward(
+        self,
+        attn_queries: Tensor,
+        attn_keys: Tensor,
+        attn_vals: Tensor,
+        attn_mask: Tensor,
+    ) -> Tensor:
+        r"""compute mha"""
+
+        q = self.proj_param(attn_queries)
+        k = self.proj_param(attn_keys)
+        v = self.proj_param(attn_vals)
+
+        q = self._reshape_to_batches(q)
+        k = self._reshape_to_batches(k)
+        v = self._reshape_to_batches(v)
+
+        mask = attn_mask.repeat(self.n_heads, 1, 1)
+
+        x = ScaledDotProductAttention()(q, k, v, mask)
+        x = self._reshape_from_batches(x)
+        x = attn_queries + self.linear_o(x)
+        return x
+
+    def _reshape_to_batches(self, x: Tensor) -> Tensor:
+        batch_size, seq_len, in_feature = x.size()
+        sub_dim = in_feature // self.n_heads
+        return (
+            x.reshape(batch_size, seq_len, self.n_heads, sub_dim)
+            .permute(0, 2, 1, 3)
+            .reshape(batch_size * self.n_heads, seq_len, sub_dim)
+        )
+
+    def _reshape_from_batches(self, x: Tensor) -> Tensor:
+        batch_size, seq_len, in_feature = x.size()
+        batch_size //= self.n_heads
+        out_dim = in_feature * self.n_heads
+        return (
+            x.reshape(batch_size, self.n_heads, seq_len, in_feature)
+            .permute(0, 2, 1, 3)
+            .reshape(batch_size, seq_len, out_dim)
+        )
+
+
 class MixtureWeights(nn.Module):
     """
     Computes mixture weights for Gaussian mixture models using attention mechanism.
@@ -30,98 +93,24 @@ class MixtureWeights(nn.Module):
     Args:
         latent_dim: Dimension of the latent/hidden representations
         num_components: Number of mixture components (Gaussians)
-        dropout_rate: Dropout rate for regularization (default: 0.1)
+        n_heads: Number of attention heads (default: 2)
     """
 
-    def __init__(
-        self, latent_dim: int, num_components: int, dropout_rate: float = 0.1
-    ) -> None:
+    def __init__(self, latent_dim: int, num_components: int, n_heads: int = 2) -> None:
         super().__init__()
 
         self.latent_dim = latent_dim
         self.num_components = num_components
+        self.n_heads = n_heads
 
         # Learnable component embeddings (queries for attention)
-        self.component_embeddings = nn.Parameter(
-            torch.randn(num_components, latent_dim) * 0.1
-        )
+        self.mixture_wt_param = nn.Parameter(torch.randn(num_components, latent_dim))
 
-        # Attention scaling factor (as in Transformer)
-        self.attention_scale = math.sqrt(latent_dim) ** -1
+        # Multi-head attention for mixture weights
+        self.mha_wts = multiheadattention(latent_dim, n_heads)
 
         # Output projection to scalar weights
-        self.output_projection = nn.Linear(latent_dim, 1)
-
-        # Initialize parameters
-
-    def _compute_attention_weights(
-        self, queries: Tensor, keys: Tensor, attention_mask: Tensor
-    ) -> Tensor:
-        """
-        Compute attention weights using scaled dot-product attention.
-
-        Args:
-            queries: Query vectors [num_components, latent_dim]
-            keys: Key vectors [batch_size, seq_len, latent_dim]
-            attention_mask: Mask for valid positions [batch_size, num_components, seq_len]
-
-        Returns:
-            Attention weights [batch_size, num_components, seq_len]
-        """
-        batch_size = keys.size(0)
-
-        # Expand queries for batch processing
-        queries_expanded = queries.unsqueeze(0).expand(batch_size, -1, -1)
-
-        # Compute attention scores: Q @ K^T / sqrt(d_k)
-        attention_scores = (
-            torch.bmm(queries_expanded, keys.transpose(-2, -1)) * self.attention_scale
-        )
-
-        # Apply mask (set masked positions to large negative value)
-        masked_scores = attention_scores.masked_fill(~attention_mask, -1e9)
-
-        # Apply softmax to get attention weights
-        attention_weights = F.softmax(masked_scores, dim=-1)
-
-        return attention_weights
-
-    def _aggregate_with_attention(
-        self, attention_weights: Tensor, values: Tensor
-    ) -> Tensor:
-        """
-        Aggregate values using attention weights.
-
-        Args:
-            attention_weights: Attention weights [batch_size, num_components, seq_len]
-            values: Value vectors [batch_size, seq_len, latent_dim]
-
-        Returns:
-            Aggregated representations [batch_size, num_components, latent_dim]
-        """
-        # Weighted aggregation: attention_weights @ values
-        aggregated = torch.bmm(attention_weights, values)
-
-        return aggregated
-
-    def _create_attention_mask(self, sequence_mask: Tensor) -> Tensor:
-        """
-        Create attention mask from sequence mask.
-
-        Args:
-            sequence_mask: Binary mask [batch_size, seq_len] where 1 = valid, 0 = invalid
-
-        Returns:
-            Attention mask [batch_size, num_components, seq_len]
-        """
-        batch_size, seq_len = sequence_mask.size()
-
-        # Expand mask for all components
-        attention_mask = sequence_mask.unsqueeze(1).expand(
-            batch_size, self.num_components, seq_len
-        )
-
-        return attention_mask.bool()
+        self.mix_wts_nn = nn.Linear(latent_dim, 1)
 
     def forward(self, encoded_history: Tensor, sequence_mask: Tensor) -> Tensor:
         """
@@ -129,12 +118,12 @@ class MixtureWeights(nn.Module):
 
         The process:
         1. Use component embeddings as queries to attend over encoded history
-        2. Compute attention weights based on similarity
-        3. Aggregate history representations using attention weights
-        4. Project to scalar weights and apply softmax for normalization
+        2. Compute multi-head attention weights
+        3. Project to scalar weights and apply softmax for normalization
 
         Args:
             encoded_history: Encoded historical data [batch_size, seq_len, latent_dim]
+                            This corresponds to 'x' in the second implementation
             sequence_mask: Binary mask for valid observations [batch_size, seq_len]
                           (1 for valid positions, 0 for padded/invalid positions)
 
@@ -142,33 +131,26 @@ class MixtureWeights(nn.Module):
             Mixture weights: [batch_size, num_components]
                            Each row sums to 1.0 (valid probability distribution)
         """
-        # Validate inputs
-        batch_size, seq_len, latent_dim = encoded_history.size()
-        assert (
-            latent_dim == self.latent_dim
-        ), f"Expected latent_dim={self.latent_dim}, got {latent_dim}"
-        assert sequence_mask.size() == (batch_size, seq_len), "Mask shape mismatch"
+        batch_size = encoded_history.shape[0]
 
-        # Create attention mask for all components
-        attention_mask = self._create_attention_mask(sequence_mask)
-
-        # Compute attention weights using component embeddings as queries
-        attention_weights = self._compute_attention_weights(
-            queries=self.component_embeddings,
-            keys=encoded_history,
-            attention_mask=attention_mask,
+        # Create mask for mixture weight attention
+        wts_mask = torch.ones_like(self.mixture_wt_param[:, 0:1])
+        attn_mix_wts_mask = torch.matmul(
+            wts_mask[None, :, :].repeat(batch_size, 1, 1), sequence_mask.unsqueeze(-2)
         )
 
-        # Aggregate encoded history using attention weights
-        aggregated_features = self._aggregate_with_attention(
-            attention_weights, encoded_history
+        # Expand mixture weight parameters for batch
+        wts_query = self.mixture_wt_param[None, :, :].repeat(batch_size, 1, 1)
+
+        # Apply multi-head attention
+        mw_ = self.mha_wts(
+            wts_query, encoded_history, encoded_history, attn_mix_wts_mask
         )
 
-        # Project to scalar weights for each component
-        # Shape: [batch_size, num_components, 1] -> [batch_size, num_components]
-        raw_weights = self.output_projection(aggregated_features).squeeze(-1)
+        # Project to scalar weights
+        mw = self.mix_wts_nn(mw_).squeeze(-1)
 
         # Apply softmax to ensure weights sum to 1.0
-        log_mixture_weights = F.log_softmax(raw_weights, dim=-1)
+        mw = nn.LogSoftmax(-1)(mw)
 
-        return log_mixture_weights
+        return mw
