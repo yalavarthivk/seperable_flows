@@ -21,7 +21,6 @@ from traitlets import default
 from core.model import Moses
 from core.utils import data_loader, metrics
 from core.utils.metrics import AdditionalLossesComputer, compute_likelihood_losses
-from mnf.utils import wasserstein_distance
 
 
 def setup_logging() -> logging.Logger:
