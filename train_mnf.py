@@ -259,7 +259,7 @@ class Trainer:
 
             # Forward pass
             self.optimizer.zero_grad()
-            self.model(
+            moses_dist = self.model(
                 tobs=tobs,
                 cobs=cobs,
                 obs_mask=obs_mask,
@@ -272,7 +272,7 @@ class Trainer:
             # Compute loss
             n_instances = qry_mask.shape[0]
             n_queries = qry_mask.sum().item()
-            njnll, mnll = compute_likelihood_losses(self.model, y, qry_mask)
+            njnll, mnll = compute_likelihood_losses(moses_dist, y, qry_mask)
 
             # Backward pass
             njnll.backward()
@@ -308,7 +308,7 @@ class Trainer:
 
                 # Forward pass
                 self.optimizer.zero_grad()
-                self.model(
+                moses_dist = self.model(
                     tobs=tobs,
                     cobs=cobs,
                     obs_mask=obs_mask,
@@ -321,7 +321,7 @@ class Trainer:
                 # Compute loss
                 n_instances = qry_mask.shape[0]
                 n_queries = qry_mask.sum().item()
-                njnll, mnll = compute_likelihood_losses(self.model, y, qry_mask)
+                njnll, mnll = compute_likelihood_losses(moses_dist, y, qry_mask)
 
                 # Accumulate statistics
                 total_njnll += njnll.item() * n_instances
@@ -359,14 +359,22 @@ class Trainer:
 
                 # Forward pass
                 self.optimizer.zero_grad()
-                self.model(tobs, cobs, obs_mask, xobs, tqry, cqry, qry_mask)
+                moses_dist = self.model(
+                    tobs=tobs,
+                    cobs=cobs,
+                    obs_mask=obs_mask,
+                    xobs=xobs,
+                    tqry=tqry,
+                    cqry=cqry,
+                    qry_mask=qry_mask,
+                )
 
                 # Compute loss
                 n_instances = qry_mask.shape[0]
                 n_queries = qry_mask.sum().item()
-                njnll, mnll = compute_likelihood_losses(self.model, y, qry_mask)
+                njnll, mnll = compute_likelihood_losses(moses_dist, y, qry_mask)
                 additional_metrics = compute_additional_metrics(
-                    model=self.model, y=y, qry_mask=qry_mask, n_samples=100
+                    model=moses_dist, y=y, qry_mask=qry_mask, n_samples=100
                 )
 
                 # Accumulate statistics
