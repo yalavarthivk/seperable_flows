@@ -248,21 +248,31 @@ class Trainer:
         total_queries = 0
         for batch in train_loader:
             # Move batch to device and unpack
-            obs, mobs, qry, mq, y = (tensor.to(self.device) for tensor in batch)
+            obs, obs_mask, qry, qry_mask, y = (
+                tensor.to(self.device) for tensor in batch
+            )
             tobs = obs[:, :, 0]
             cobs = obs[:, :, 1]
             xobs = obs[:, :, 2]
-            tq = qry[:, :, 0]
-            cq = qry[:, :, 1]
+            tqry = qry[:, :, 0]
+            cqry = qry[:, :, 1]
 
             # Forward pass
             self.optimizer.zero_grad()
-            self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
+            self.model(
+                tobs=tobs,
+                cobs=cobs,
+                obs_mask=obs_mask,
+                xobs=xobs,
+                tqry=tqry,
+                cqry=cqry,
+                qry_mask=qry_mask,
+            )
 
             # Compute loss
-            n_instances = mq.shape[0]
-            n_queries = mq.sum().item()
-            njnll, mnll = compute_likelihood_losses(self.model, y, mq)
+            n_instances = qry_mask.shape[0]
+            n_queries = qry_mask.sum().item()
+            njnll, mnll = compute_likelihood_losses(self.model, y, qry_mask)
 
             # Backward pass
             njnll.backward()
@@ -287,21 +297,31 @@ class Trainer:
         with torch.no_grad():
             for batch in eval_loader:
                 # Move batch to device and unpack
-                obs, mobs, qry, mq, y = (tensor.to(self.device) for tensor in batch)
+                obs, obs_mask, qry, qry_mask, y = (
+                    tensor.to(self.device) for tensor in batch
+                )
                 tobs = obs[:, :, 0]
                 cobs = obs[:, :, 1]
                 xobs = obs[:, :, 2]
-                tq = qry[:, :, 0]
-                cq = qry[:, :, 1]
+                tqry = qry[:, :, 0]
+                cqry = qry[:, :, 1]
 
                 # Forward pass
                 self.optimizer.zero_grad()
-                self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
+                self.model(
+                    tobs=tobs,
+                    cobs=cobs,
+                    obs_mask=obs_mask,
+                    xobs=xobs,
+                    tqry=tqry,
+                    cqry=cqry,
+                    qry_mask=qry_mask,
+                )
 
                 # Compute loss
-                n_instances = mq.shape[0]
-                n_queries = mq.sum().item()
-                njnll, mnll = compute_likelihood_losses(self.model, y, mq)
+                n_instances = qry_mask.shape[0]
+                n_queries = qry_mask.sum().item()
+                njnll, mnll = compute_likelihood_losses(self.model, y, qry_mask)
 
                 # Accumulate statistics
                 total_njnll += njnll.item() * n_instances
@@ -328,23 +348,25 @@ class Trainer:
         with torch.no_grad():
             for batch in eval_loader:
                 # Move batch to device and unpack
-                obs, mobs, qry, mq, y = (tensor.to(self.device) for tensor in batch)
+                obs, obs_mask, qry, qry_mask, y = (
+                    tensor.to(self.device) for tensor in batch
+                )
                 tobs = obs[:, :, 0]
                 cobs = obs[:, :, 1]
                 xobs = obs[:, :, 2]
-                tq = qry[:, :, 0]
-                cq = qry[:, :, 1]
+                tqry = qry[:, :, 0]
+                cqry = qry[:, :, 1]
 
                 # Forward pass
                 self.optimizer.zero_grad()
-                self.model(tobs, cobs, mobs, xobs, tq, cq, mq)
+                self.model(tobs, cobs, obs_mask, xobs, tqry, cqry, qry_mask)
 
                 # Compute loss
-                n_instances = mq.shape[0]
-                n_queries = mq.sum().item()
-                njnll, mnll = compute_likelihood_losses(self.model, y, mq)
+                n_instances = qry_mask.shape[0]
+                n_queries = qry_mask.sum().item()
+                njnll, mnll = compute_likelihood_losses(self.model, y, qry_mask)
                 additional_metrics = compute_additional_metrics(
-                    model=self.model, y=y, mq=mq, n_samples=100
+                    model=self.model, y=y, qry_mask=qry_mask, n_samples=100
                 )
 
                 # Accumulate statistics

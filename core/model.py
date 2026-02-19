@@ -10,18 +10,16 @@ Example:
     >>> model = Moses(n_inputs=5, latent_dim=128, num_components=3)
     >>> model.to('cuda')
     >>> # Forward pass
-    >>> nll = model.compute_loss(tx, cx, mx, x, tq, cq, mq, y)
+    >>> nll = model.compute_loss(tobs, cobs, obs_mask, x, tqry, cqry, qry_mask, y)
     >>> # Sampling
-    >>> samples = model.sample(mq, num_samples=1000)
+    >>> samples = model.sample(qry_mask, num_samples=1000)
 """
 
 __all__ = [
     "Moses",
 ]
 
-import pdb
-import warnings
-from typing import Final, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
@@ -55,6 +53,7 @@ class Moses(nn.Module):
     def __init__(
         self,
         n_inputs: int = 5,
+        *,
         n_heads: int = 2,
         num_components: int = 2,
         latent_dim: int = 128,
@@ -85,6 +84,8 @@ class Moses(nn.Module):
 
         # State variables (computed during forward pass)
         self._reset_state()
+
+        self.log_mixture_weights = None
 
         # Move to device if specified
         if device is not None:
@@ -147,34 +148,46 @@ class Moses(nn.Module):
 
     def forward(
         self,
-        tx: Tensor,
-        cx: Tensor,
-        mx: Tensor,
-        x: Tensor,
-        tq: Tensor,
-        cq: Tensor,
-        mq: Tensor,
+        tobs: Tensor,
+        cobs: Tensor,
+        *,
+        obs_mask: Tensor,
+        xobs: Tensor,
+        tqry: Tensor,
+        cqry: Tensor,
+        qry_mask: Tensor,
     ):
         """Encode conditioning information.
 
         Args:
-            tx, cx, mx, x: Training/context inputs
-            tq, cq, mq: Query inputs
+            tobs, cobs, obs_mask, xobs: Training/context inputs
+            tqry, cqry, qry_mask: Query inputs
 
         Returns:
             Tuple of (full_conditioning, history_conditioning, log_mixture_weights)
         """
         # Encode inputs
-        history_encoding, query_encoding = self.encoder(tx, cx, mx, x, tq, cq, mq)
+
+        history_encoding, query_encoding = self.encoder(
+            tobs=tobs,
+            cobs=cobs,
+            obs_mask=obs_mask,
+            xobs=xobs,
+            tqry=tqry,
+            cqry=cqry,
+            qry_mask=qry_mask,
+        )
 
         # Compute mixture weights
-        self.log_mixture_weights = self.mixture_weights(history_encoding, mx)
+        self.log_mixture_weights = self.mixture_weights(history_encoding, obs_mask)
         # Update base distribution
-        self.base_distribution(query_encoding, mq)
+        self.base_distribution(query_encoding, qry_mask)
 
         # Update flow conditioning
         for flow in self.flows:
             flow(query_encoding)
+
+        return self
 
     def _apply_flows_forward(self, y: Tensor) -> Tuple[Tensor, Tensor]:
         """Apply normalizing flows in forward direction.
@@ -221,12 +234,12 @@ class Moses(nn.Module):
         """
         return y.unsqueeze(1).repeat(1, self.num_components, 1)
 
-    def compute_njnll(self, y: Tensor, mq: Tensor) -> Tensor:
+    def compute_njnll(self, y: Tensor, qry_mask: Tensor) -> Tensor:
         """Compute normalized joint negative log-likelihood.
 
         Args:
             y: Target values
-            mq: Query mask
+            qry_mask: Query mask
 
         Returns:
             Mean NJNLL across batch
@@ -235,27 +248,27 @@ class Moses(nn.Module):
             raise RuntimeError(
                 "Must call encode_conditioning() before computing likelihood"
             )
-        mq_expanded = mq[:, None, :]
+        qry_mask_expanded = qry_mask[:, None, :]
         y_expanded = self._prepare_target_tensor(y)
         z, ldj = self._apply_flows_forward(y_expanded)
-        z = z * mq_expanded
-        ldj = ldj * mq_expanded
+        z = z * qry_mask_expanded
+        ldj = ldj * qry_mask_expanded
         likelihood = compute_njnll_on_latent(
             z,
             self.base_distribution,
             ldj,
-            mq,
+            qry_mask,
             self.log_mixture_weights,
         )
 
         return likelihood.mean()
 
-    def compute_mnll(self, y: Tensor, mq: Tensor) -> Tensor:
+    def compute_mnll(self, y: Tensor, qry_mask: Tensor) -> Tensor:
         """Compute marginal negative log-likelihood.
 
         Args:
             y: Target values
-            mq: Query mask
+            qry_mask: Query mask
 
         Returns:
             Mean MNLL across batch
@@ -272,7 +285,7 @@ class Moses(nn.Module):
             z,
             self.base_distribution,
             ldj,
-            mq,
+            qry_mask,
             self.log_mixture_weights,
         )
 
@@ -297,12 +310,16 @@ class Moses(nn.Module):
         return torch.multinomial(mixture_probs, num_samples, replacement=True)
 
     def sample_joint(
-        self, mq: Tensor, num_samples: int = 1000, return_indices: bool = False
+        self,
+        qry_mask: Tensor,
+        num_samples: int = 1000,
+        *,
+        return_indices: bool = False,
     ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         """Sample from joint distribution.
 
         Args:
-            mq: Query mask
+            qry_mask: Query mask
             num_samples: Number of samples to generate
             return_indices: Whether to return mixture indices
 
@@ -313,7 +330,7 @@ class Moses(nn.Module):
             raise RuntimeError("Must call encode_conditioning() before sampling")
             # Sample from base distribution
         z = self.base_distribution.sample_joint(num_samples)
-        z *= mq[:, None, :, None]
+        z *= qry_mask[:, None, :, None]
         # Transform through flows
 
         x, _ = self._apply_flows_inverse(z)  # B, D, K, nsamples
@@ -324,7 +341,7 @@ class Moses(nn.Module):
         # Select according to mixture indices
 
         indices_exp = (
-            indices.unsqueeze(-1).expand(-1, -1, mq.shape[1]).permute(0, 2, 1)
+            indices.unsqueeze(-1).expand(-1, -1, qry_mask.shape[1]).permute(0, 2, 1)
         )  # (B, K, nsamples)
         # For gather, X must be permuted so that D is at the last dimension
         x_perm = x.permute(0, 2, 3, 1)  # (B, K, nsamples, D)
@@ -336,16 +353,20 @@ class Moses(nn.Module):
             -1
         )  # (B, K, nsamples)
 
-        x_selected = x_selected * mq.unsqueeze(-1)
+        x_selected = x_selected * qry_mask.unsqueeze(-1)
         return (x_selected, indices) if return_indices else x_selected
 
     def sample_marginal(
-        self, mq: Tensor, num_samples: int = 1000, return_indices: bool = False
+        self,
+        qry_mask: Tensor,
+        num_samples: int = 1000,
+        *,
+        return_indices: bool = False,
     ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         """Sample from marginal distributions.
 
         Args:
-            mq: Query mask
+            qry_mask: Query mask
             num_samples: Number of samples to generate
             return_indices: Whether to return mixture indices
 
@@ -357,30 +378,31 @@ class Moses(nn.Module):
 
         # Sample from marginal base distribution
         z = self.base_distribution.sample_marginal(num_samples)
-        z *= mq[:, None, :, None]
+        z *= qry_mask[:, None, :, None]
         # Transform through flows
         x, _ = self._apply_flows_inverse(z)
-        seq_len = mq.shape[-1]
+        seq_len = qry_mask.shape[-1]
         # Sample mixture indices
         indices = self._sample_mixture_indices(num_samples * seq_len)
 
         # Select according to mixture indices
         batch_indices = torch.arange(x.shape[0]).unsqueeze(1)
         x_selected = x[batch_indices, indices]
-        x_selected = x_selected * mq.unsqueeze(-1)
+        x_selected = x_selected * qry_mask.unsqueeze(-1)
         return (x_selected, indices) if return_indices else x_selected
 
     def sample(
         self,
-        mq: Tensor,
+        qry_mask: Tensor,
         num_samples: int = 1000,
+        *,
         mode: str = "joint",
         return_indices: bool = False,
     ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         """Unified sampling interface.
 
         Args:
-            mq: Query mask
+            qry_mask: Query mask
             num_samples: Number of samples to generate
             mode: Sampling mode ('joint' or 'marginal')
             return_indices: Whether to return mixture indices
@@ -389,9 +411,13 @@ class Moses(nn.Module):
             Samples tensor, optionally with mixture indices
         """
         if mode == "joint":
-            return self.sample_joint(mq, num_samples, return_indices)
+            return self.sample_joint(
+                qry_mask, num_samples, return_indices=return_indices
+            )
         elif mode == "marginal":
-            return self.sample_marginal(mq, num_samples, return_indices)
+            return self.sample_marginal(
+                qry_mask, num_samples, return_indices=return_indices
+            )
         else:
             raise ValueError(
                 f"Invalid sampling mode: {mode}. Use 'joint' or 'marginal'"

@@ -258,14 +258,14 @@ class TimeSeriesEncoder(nn.Module):
         return channel_embed
 
     def _create_attention_masks(
-        self, obs_mask: Tensor, query_mask: Tensor
+        self, obs_mask: Tensor, qry_mask: Tensor
     ) -> Tuple[Tensor, Tensor]:
         """
         Create attention masks for self-attention and cross-attention.
 
         Args:
             obs_mask: Observation mask [batch_size, n_obs]
-            query_mask: Query mask [batch_size, n_queries]
+            qry_mask: Query mask [batch_size, n_queries]
 
         Returns:
             Tuple of (self_attention_mask, cross_attention_mask)
@@ -274,19 +274,20 @@ class TimeSeriesEncoder(nn.Module):
         self_mask = torch.matmul(obs_mask.unsqueeze(-1), obs_mask.unsqueeze(-2))
 
         # Cross-attention mask (query to obs)
-        cross_mask = torch.matmul(query_mask.unsqueeze(-1), obs_mask.unsqueeze(-2))
+        cross_mask = torch.matmul(qry_mask.unsqueeze(-1), obs_mask.unsqueeze(-2))
 
         return self_mask, cross_mask
 
     def forward(
         self,
-        obs_times: Tensor,
-        obs_channels: Tensor,
+        tobs: Tensor,
+        cobs: Tensor,
+        *,
         obs_mask: Tensor,
-        obs_values: Tensor,
-        query_times: Tensor,
-        query_channels: Tensor,
-        query_mask: Tensor,
+        xobs: Tensor,
+        tqry: Tensor,
+        cqry: Tensor,
+        qry_mask: Tensor,
     ) -> Tuple[Tensor, Tensor]:
         """
         Forward pass through the time series encoder.
@@ -297,7 +298,7 @@ class TimeSeriesEncoder(nn.Module):
             obs_mask: Observation mask [batch_size, n_obs]
             queries: Query data [batch_size, n_queries, 2]
                     (time, channel)
-            query_mask: Query mask [batch_size, n_queries]
+            qry_mask: Query mask [batch_size, n_queries]
 
         Returns:
             Tuple of:
@@ -305,30 +306,30 @@ class TimeSeriesEncoder(nn.Module):
                 - Full encoding [batch_size, n_gaussians, n_obs, d_model]
         """
 
-        num_queries = query_times.shape[-1]
+        num_queries = tqry.shape[-1]
         # Encode time and channel information
-        obs_time_embed = self._encode_time(obs_times.unsqueeze(-1), is_query=False)
-        query_time_embed = self._encode_time(query_times.unsqueeze(-1), is_query=True)
+        obs_time_embed = self._encode_time(tobs.unsqueeze(-1), is_query=False)
+        query_time_embed = self._encode_time(tqry.unsqueeze(-1), is_query=True)
 
-        obs_channel_embed = self._encode_channels(obs_channels, is_query=False)
-        query_channel_embed = self._encode_channels(query_channels, is_query=True)
+        obs_channel_embed = self._encode_channels(cobs, is_query=False)
+        query_channel_embed = self._encode_channels(cqry, is_query=True)
 
         # Combine embeddings
         obs_combined = torch.cat(
-            [obs_time_embed, obs_channel_embed, obs_values.unsqueeze(-1)], dim=-1
+            [obs_time_embed, obs_channel_embed, xobs.unsqueeze(-1)], dim=-1
         )
         query_combined = torch.cat([query_time_embed, query_channel_embed], dim=-1)
 
         # Apply masks to embeddings
         obs_combined = obs_combined * obs_mask.unsqueeze(-1)
-        query_combined = query_combined * query_mask.unsqueeze(-1)
+        query_combined = query_combined * qry_mask.unsqueeze(-1)
 
         # Project to model dimension
         obs_projected = self.key_projection(obs_combined)
         query_projected = self.query_projection(query_combined)
 
         # Create attention masks
-        self_mask, cross_mask = self._create_attention_masks(obs_mask, query_mask)
+        self_mask, cross_mask = self._create_attention_masks(obs_mask, qry_mask)
 
         # Apply self-attention to observations
 
